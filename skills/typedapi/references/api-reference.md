@@ -1,45 +1,96 @@
-# typedapi.ts
+# typedapi.ts API Reference
 
-A type-safe Web framework based on the standard fetch interface, using Typia for runtime validation.
+Load this file when you need concrete typedapi.ts examples or exact public API patterns.
 
-## Installation
+## Contents
+
+- Installation and transformer setup
+- Public exports
+- Basic router and CRUD routes
+- Parameter wrappers
+- Request context
+- Response auto-conversion
+- Response helpers
+- Cookie helpers
+- Middleware and route groups
+- CORS
+- Error handling
+- Dependency injection
+- Typed injectable metadata
+- Compile-time metadata extraction
+- OpenAPI 3.1 generation
+- Runtime validation with Typia
+
+## Public Exports
+
+Functions:
+
+- `api`
+- `createRouter`
+- `middleware`
+- `cors`
+- `routes`
+- `inject`
+- `openapi`
+- `json`
+- `html`
+- `text`
+- `stream`
+- `sse`
+- `redirect`
+- `file`
+- `cookie`
+- `clearCookie`
+- `handleError`
+
+Common request and response types:
+
+- `Path<T, Meta>`
+- `Query<T, Meta>`
+- `Header<T, Meta>`
+- `Cookie<T, Meta>`
+- `Json<T, Meta>`
+- `Form<T, Meta>`
+- `Inject<typeof X>`
+- `JsonResponse<Status, Headers, Body>`
+- `HtmlResponse`
+- `TextResponse`
+- `StreamResponse`
+- `SseResponse`
+
+Framework and utility types:
+
+- `Middleware`
+- `HttpError`
+- `RequestContext`
+- `requestSymbol`
+- `Validate<T>`
+- `Route`
+- `RouteConfig`
+- `RouteMatch`
+
+## Installation And Transformer Setup
+
+Install the framework:
 
 ```bash
 npm install typedapi.ts
 ```
 
-### TypeScript Transform Setup
-
-Install [ts-patch](https://github.com/nonara/ts-patch) to enable automatic OpenAPI generation at compile time:
+Install optional transformer support:
 
 ```bash
 npm install -D ts-patch
 npx ts-patch install
 ```
 
-Add the plugin in `tsconfig.json`:
-
-```json
-{
-  "compilerOptions": {
-    "plugins": [
-      { "transform": "typedapi.ts/transform" }
-    ]
-  }
-}
-```
-
-With this configuration, the framework automatically generates OpenAPI parameter and response schemas from the handler's parameter types and return types at compile time, with no manual declarations required.
-
-### Runtime Validation
-
-Install [typia](https://typia.io):
+Install Typia only when runtime validation is needed:
 
 ```bash
 npm install typia
 ```
 
-Add the typia plugin in `tsconfig.json` (**it must come after the typedapi.ts transform**):
+Configure `tsconfig.json` with the typedapi transformer before Typia:
 
 ```json
 {
@@ -52,25 +103,13 @@ Add the typia plugin in `tsconfig.json` (**it must come after the typedapi.ts tr
 }
 ```
 
-## Start the Server
+The transformer extracts OpenAPI parameter and response metadata from handler types at compile time.
 
-`createRouter()` returns the standard `(request: Request) => Promise<Response>` signature, so you can deploy it to Cloudflare Workers by exporting it directly:
+## Basic Router And CRUD Routes
 
-```typescript
-import { api, createRouter } from "typedapi.ts";
+`createRouter()` returns a standard fetch-style request handler.
 
-const health = api({ method: "GET", path: "/health" }, async () => {
-  return { status: "ok" };
-});
-
-export default createRouter([health]);
-```
-
-## Usage
-
-### Basic CRUD
-
-```typescript
+```ts
 import { api, createRouter, Json, JsonResponse, Path } from "typedapi.ts";
 
 interface Order {
@@ -135,9 +174,15 @@ export default createRouter([
 ]);
 ```
 
-### Path Parameters
+## Parameter Wrappers
 
-```typescript
+Handler params are assembled from request data with this precedence:
+
+`path > body > query > cookie > header`
+
+### `Path<T, Meta>`
+
+```ts
 import { api, createRouter, Path } from "typedapi.ts";
 
 const getInvoice = api(
@@ -157,9 +202,9 @@ const getInvoice = api(
 export default createRouter([getInvoice]);
 ```
 
-### Query Parameters
+### `Query<T, Meta>`
 
-```typescript
+```ts
 import { api, createRouter, Query } from "typedapi.ts";
 
 const searchCatalog = api(
@@ -181,9 +226,9 @@ const searchCatalog = api(
 export default createRouter([searchCatalog]);
 ```
 
-### Header Parameters
+### `Header<T, Meta>`
 
-```typescript
+```ts
 import { api, createRouter, Header } from "typedapi.ts";
 
 const getProfile = api(
@@ -202,9 +247,9 @@ const getProfile = api(
 export default createRouter([getProfile]);
 ```
 
-### Cookie Parameters
+### `Cookie<T, Meta>`
 
-```typescript
+```ts
 import { api, createRouter, Cookie } from "typedapi.ts";
 
 const getCart = api(
@@ -224,9 +269,9 @@ const getCart = api(
 export default createRouter([getCart]);
 ```
 
-### JSON Request Body
+### `Json<T, Meta>`
 
-```typescript
+```ts
 import { api, createRouter, Json, JsonResponse } from "typedapi.ts";
 
 interface Ticket {
@@ -252,9 +297,11 @@ const createTicket = api(
 export default createRouter([createTicket]);
 ```
 
-### Form Request Body
+### `Form<T, Meta>`
 
-```typescript
+`Form` supports both `application/x-www-form-urlencoded` and `multipart/form-data`. File fields remain `File` objects. Repeated keys become arrays.
+
+```ts
 import { api, createRouter, type Form } from "typedapi.ts";
 
 const submitForm = api(
@@ -271,12 +318,17 @@ const submitForm = api(
 export default createRouter([submitForm]);
 ```
 
-Supports `application/x-www-form-urlencoded` and `multipart/form-data`. In multipart requests, file fields are passed in as `File` objects.
+## Request Context
 
-### Request Context
+Use `requestSymbol` when you need the raw `Request`.
 
-```typescript
-import { api, createRouter, requestSymbol, type RequestContext } from "typedapi.ts";
+```ts
+import {
+  api,
+  createRouter,
+  requestSymbol,
+  type RequestContext,
+} from "typedapi.ts";
 
 const info = api(
   { method: "GET", path: "/info" },
@@ -289,38 +341,35 @@ const info = api(
 export default createRouter([info]);
 ```
 
-### Automatic Response Conversion
+## Response Auto-Conversion
 
-`api()` automatically converts the handler's return value into a `Response`:
+`api()` converts handler results to `Response` automatically:
 
-| Return Value | Response |
+| Handler return value | Response behavior |
 | --- | --- |
-| `Response` | Passed through unchanged |
+| `Response` | passthrough |
 | `null` | `204 No Content` |
 | `string` | `text/plain; charset=utf-8` |
-| `URL` | `307 Redirect` |
+| `URL` | `307` redirect |
 | `ReadableStream` | `application/octet-stream` |
 | `AsyncIterable` | `text/event-stream` |
-| Any other value | JSON response |
+| anything else | JSON response |
 
-```typescript
+```ts
 import { api, createRouter, text } from "typedapi.ts";
 
 const items = new Map<number, { id: number }>();
 
-// Response → passed through unchanged
 const health = api(
   { method: "GET", path: "/health" },
   async () => text("ok", 200, { "x-service": "typedapi-ts" }),
 );
 
-// string → text/plain
 const greet = api(
   { method: "GET", path: "/greet" },
   async () => "hello world",
 );
 
-// null → 204 No Content
 const deleteItem = api(
   { method: "DELETE", path: "/items/:id" },
   async (params: { id: number }) => {
@@ -329,7 +378,6 @@ const deleteItem = api(
   },
 );
 
-// ReadableStream → application/octet-stream
 const download = api(
   { method: "GET", path: "/download" },
   async () =>
@@ -341,7 +389,6 @@ const download = api(
     }),
 );
 
-// AsyncIterable → SSE (text/event-stream)
 const events = api(
   { method: "GET", path: "/events" },
   async function* () {
@@ -350,7 +397,6 @@ const events = api(
   },
 );
 
-// object → JSON (default)
 const getUser = api(
   { method: "GET", path: "/users/:id" },
   async (params: { id: number }) => ({
@@ -359,10 +405,19 @@ const getUser = api(
   }),
 );
 
-export default createRouter([health, greet, deleteItem, download, events, getUser]);
+export default createRouter([
+  health,
+  greet,
+  deleteItem,
+  download,
+  events,
+  getUser,
+]);
 ```
 
-```typescript
+Returning a `URL` also redirects automatically:
+
+```ts
 import { api, createRouter } from "typedapi.ts";
 
 const goToDocs = api(
@@ -373,9 +428,11 @@ const goToDocs = api(
 export default createRouter([goToDocs]);
 ```
 
-### JSON Responses
+## Response Helpers
 
-```typescript
+### `json()`
+
+```ts
 import { api, createRouter, json, type JsonResponse } from "typedapi.ts";
 
 type CreateUserResult =
@@ -391,9 +448,9 @@ const createUser = api(
 export default createRouter([createUser]);
 ```
 
-### HTML Responses
+### `html()`
 
-```typescript
+```ts
 import { api, createRouter, html } from "typedapi.ts";
 
 const renderDashboard = api(
@@ -411,9 +468,9 @@ const renderDashboard = api(
 export default createRouter([renderDashboard]);
 ```
 
-### Plain Text Responses
+### `text()`
 
-```typescript
+```ts
 import { api, createRouter, text } from "typedapi.ts";
 
 const exportRobots = api(
@@ -425,11 +482,105 @@ const exportRobots = api(
 export default createRouter([exportRobots]);
 ```
 
-### Set-Cookie Serialization
+### `stream()`
 
-The `headers` parameter of `json()` / `html()` / `text()` / `stream()` / `sse()` / `file()` supports both `string` and `string[]`. When an array is passed, headers with the same name are appended, which is useful for multiple `Set-Cookie` values; explicitly passing `content-type` overrides the default.
+```ts
+import { api, createRouter, stream } from "typedapi.ts";
 
-```typescript
+const encoder = new TextEncoder();
+
+const downloadReport = api(
+  { method: "GET", path: "/reports/daily.csv" },
+  async () => {
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode("date,revenue\n"));
+        controller.enqueue(encoder.encode("2026-03-18,18200\n"));
+        controller.enqueue(encoder.encode("2026-03-19,19450\n"));
+        controller.close();
+      },
+    });
+
+    return stream(body, 200, {
+      "content-disposition": "attachment; filename=daily.csv",
+    });
+  },
+);
+
+export default createRouter([downloadReport]);
+```
+
+### `sse()`
+
+```ts
+import { api, createRouter, sse } from "typedapi.ts";
+
+async function* salesFeed() {
+  yield { store: "tokyo", total: 1280 };
+  yield { store: "osaka", total: 1315 };
+  yield { store: "nagoya", total: 1272 };
+}
+
+const streamSales = api(
+  { method: "GET", path: "/events/sales" },
+  async () =>
+    sse(salesFeed(), {
+      "x-stream-name": "sales-feed",
+    }),
+);
+
+export default createRouter([streamSales]);
+```
+
+### `redirect()`
+
+```ts
+import { api, createRouter, redirect } from "typedapi.ts";
+
+const legacyRedirect = api(
+  { method: "GET", path: "/old-path" },
+  async () => redirect("/new-path"),
+);
+
+const autoRedirect = api(
+  { method: "GET", path: "/go" },
+  async () => new URL("https://example.com"),
+);
+
+export default createRouter([legacyRedirect, autoRedirect]);
+```
+
+`redirect()` defaults to status `307`.
+
+### `file()`
+
+```ts
+import { api, createRouter, file } from "typedapi.ts";
+
+const serveFavicon = api(
+  { method: "GET", path: "/favicon.ico" },
+  async () => file("./public/favicon.ico"),
+);
+
+const serveWithType = api(
+  { method: "GET", path: "/data.csv" },
+  async () =>
+    file("./exports/data.csv", {
+      contentType: "text/csv",
+      headers: { "content-disposition": "attachment; filename=data.csv" },
+    }),
+);
+
+export default createRouter([serveFavicon, serveWithType]);
+```
+
+`file()` infers the MIME type from the file extension unless `contentType` is provided explicitly.
+
+## Cookie Helpers
+
+`json()`, `html()`, `text()`, `stream()`, `sse()`, and `file()` accept `headers` values as `string` or `string[]`. Arrays are useful for repeated `Set-Cookie` headers.
+
+```ts
 import { api, cookie, clearCookie, json } from "typedapi.ts";
 
 const signIn = api(
@@ -470,101 +621,23 @@ const signOut = api(
 );
 ```
 
-### Streaming Responses
+Notes:
 
-```typescript
-import { api, createRouter, stream } from "typedapi.ts";
+- `cookie()` URL-encodes the name and value.
+- `sameSite: "None"` automatically adds `Secure`.
+- `clearCookie()` sets `Max-Age=0` and the Unix epoch `Expires` date.
 
-const encoder = new TextEncoder();
+## Middleware And Route Groups
 
-const downloadReport = api(
-  { method: "GET", path: "/reports/daily.csv" },
-  async () => {
-    const body = new ReadableStream({
-      start(controller) {
-        controller.enqueue(encoder.encode("date,revenue\n"));
-        controller.enqueue(encoder.encode("2026-03-18,18200\n"));
-        controller.enqueue(encoder.encode("2026-03-19,19450\n"));
-        controller.close();
-      },
-    });
+Middleware signature:
 
-    return stream(body, 200, {
-      "content-disposition": "attachment; filename=daily.csv",
-    });
-  },
-);
-
-export default createRouter([downloadReport]);
+```ts
+(next) => (params) => Response | Promise<Response>
 ```
 
-### SSE (Server-Sent Events)
+Middleware can read params, short-circuit, or call `next()`.
 
-```typescript
-import { api, createRouter, sse } from "typedapi.ts";
-
-async function* salesFeed() {
-  yield { store: "tokyo", total: 1280 };
-  yield { store: "osaka", total: 1315 };
-  yield { store: "nagoya", total: 1272 };
-}
-
-const streamSales = api(
-  { method: "GET", path: "/events/sales" },
-  async () =>
-    sse(salesFeed(), {
-      "x-stream-name": "sales-feed",
-    }),
-);
-
-export default createRouter([streamSales]);
-```
-
-### Redirect Responses
-
-```typescript
-import { api, createRouter, redirect } from "typedapi.ts";
-
-const legacyRedirect = api(
-  { method: "GET", path: "/old-path" },
-  async () => redirect("/new-path"),
-);
-
-const autoRedirect = api(
-  { method: "GET", path: "/go" },
-  async () => new URL("https://example.com"),
-);
-
-export default createRouter([legacyRedirect, autoRedirect]);
-```
-
-### Static File Responses
-
-```typescript
-import { api, createRouter, file } from "typedapi.ts";
-
-const serveFavicon = api(
-  { method: "GET", path: "/favicon.ico" },
-  async () => file("./public/favicon.ico"),
-);
-
-const serveWithType = api(
-  { method: "GET", path: "/data.csv" },
-  async () =>
-    file("./exports/data.csv", {
-      contentType: "text/csv",
-      headers: { "content-disposition": "attachment; filename=data.csv" },
-    }),
-);
-
-export default createRouter([serveFavicon, serveWithType]);
-```
-
-### Middleware
-
-Middleware signature: `(next) => (params) => Response`. Middleware can read request parameters, return early, or call `next()` to continue execution.
-
-```typescript
+```ts
 import { api, createRouter, Header, middleware } from "typedapi.ts";
 
 const auth = middleware((next) =>
@@ -584,11 +657,11 @@ const getSecret = api(
 export default createRouter([getSecret]);
 ```
 
-With the transformer enabled, the parameter type of the `middleware()` handler and the return type of the inner handler are automatically extracted at compile time just like `api()`. Parameter and response metadata declared in middleware are merged into the OpenAPI document of every endpoint that uses that middleware; if they duplicate route-level parameters, the route-level parameters take precedence; if response status codes overlap, the route-level responses take precedence.
+Multiple middleware entries run in onion order:
 
-Multiple middlewares run in array order using the onion model, and each one can insert logic before and after `next()`:
+```ts
+import { api, type Middleware } from "typedapi.ts";
 
-```typescript
 const timing: Middleware = (next) =>
   async (_params: {}) => {
     const start = Date.now();
@@ -597,18 +670,19 @@ const timing: Middleware = (next) =>
     return res;
   };
 
+const auth: Middleware = (next) =>
+  async (_params: {}) => next();
+
 const getUsers = api(
   { method: "GET", path: "/users", middlewares: [timing, auth] },
   async () => [{ id: 1 }],
 );
 ```
 
-### Route Grouping
+`routes()` groups routes under shared prefix and middleware:
 
-`routes()` groups multiple routes together, with support for shared prefixes and middlewares:
-
-```typescript
-import { api, routes, createRouter, Header, type Middleware } from "typedapi.ts";
+```ts
+import { api, routes, createRouter, type Middleware } from "typedapi.ts";
 
 const auth: Middleware = (next) =>
   async (params: { authorization: string }) => {
@@ -628,36 +702,45 @@ const getItems = api(
   async () => [{ id: 2 }],
 );
 
-// Both /api/users and /api/items go through the auth middleware
 const apiRoutes = routes({ prefix: "/api", middlewares: [auth] }, getUsers, getItems);
 
 export default createRouter(apiRoutes);
 ```
 
-When groups are nested, prefixes are combined and middlewares run from outermost to innermost:
+Nested groups stack both prefix and middleware:
 
-```typescript
+```ts
+import { api, routes, type Middleware } from "typedapi.ts";
+
+const auth: Middleware = (next) =>
+  async (_params: {}) => next();
+
 const logging: Middleware = (next) =>
   async (_params: {}) => {
     console.log("request");
     return next();
   };
 
-const v1Routes = routes({ prefix: "/v1", middlewares: [auth] }, getUsers);
-// Final path: /api/v1/users
-// Execution order: logging → auth → handler
-const allRoutes = routes({ prefix: "/api", middlewares: [logging] }, ...v1Routes);
+const getUsers = api(
+  { method: "GET", path: "/users" },
+  async () => [{ id: 1 }],
+);
 
-export default createRouter(allRoutes);
+const v1Routes = routes({ prefix: "/v1", middlewares: [auth] }, getUsers);
+const allRoutes = routes({ prefix: "/api", middlewares: [logging] }, ...v1Routes);
 ```
 
-Route-group-level middleware runs before the middleware defined on the individual route itself:
+Group middleware runs before route middleware:
 
-```typescript
+```ts
+import { api, routes, type Middleware } from "typedapi.ts";
+
+const auth: Middleware = (next) =>
+  async (_params: {}) => next();
+
 const rateLimit: Middleware = (next) =>
   async (_params: {}) => next();
 
-// Execution order: auth (from routes) → rateLimit (from route) → handler
 const protectedRoutes = routes(
   { middlewares: [auth] },
   api(
@@ -667,9 +750,13 @@ const protectedRoutes = routes(
 );
 ```
 
-### CORS
+When the transformer is enabled, `middleware()` can contribute parameter and response metadata to OpenAPI docs. Route-level metadata wins on conflicts.
 
-```typescript
+## CORS
+
+Use `cors()` as middleware on a route or a route group:
+
+```ts
 import { api, createRouter, cors, routes } from "typedapi.ts";
 
 const health = api(
@@ -694,22 +781,22 @@ const apiRoutes = routes(
 export default createRouter(apiRoutes);
 ```
 
-`CorsOptions` configuration:
+`CorsOptions`:
 
-| Option | Type | Default | Description |
+| Option | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `origin` | `string \| string[] \| ((origin: string) => boolean)` | `"*"` | Allowed origins |
-| `methods` | `string[]` | `["GET", "HEAD", "PUT", "POST", "DELETE", "PATCH"]` | Allowed HTTP methods |
-| `allowHeaders` | `string[]` | — | Allowed request headers (if unset, echoes `Access-Control-Request-Headers`) |
-| `exposeHeaders` | `string[]` | — | Response headers exposed to the browser |
-| `credentials` | `boolean` | — | Whether credentials are allowed |
-| `maxAge` | `number` | — | Number of seconds to cache preflight responses |
+| `origin` | `string \| string[] \| ((origin: string) => boolean)` | `"*"` | allowed origins |
+| `methods` | `string[]` | `["GET", "HEAD", "PUT", "POST", "DELETE", "PATCH"]` | allowed methods |
+| `allowHeaders` | `string[]` | none | allowed request headers |
+| `exposeHeaders` | `string[]` | none | exposed response headers |
+| `credentials` | `boolean` | none | whether credentials are allowed |
+| `maxAge` | `number` | none | preflight cache seconds |
 
-### Error Handling
+## Error Handling
 
-Throwing `HttpError` in a handler or middleware returns a controlled error response. Any other uncaught exception is automatically converted into `500 Internal Server Error`.
+Throw `HttpError` in handlers or middleware for controlled responses:
 
-```typescript
+```ts
 import { api, createRouter, HttpError, Path } from "typedapi.ts";
 
 const orders = new Map<number, { id: number; customer: string }>([
@@ -730,47 +817,44 @@ const getOrder = api(
 export default createRouter([getOrder]);
 ```
 
-`HttpError` constructor parameters:
+Constructor shape:
 
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `status` | `number` | HTTP status code |
-| `body` | `string \| Record<string, unknown>` | Optional. Strings are converted to `{ message }` JSON; objects are returned as-is; if omitted, there is no response body |
-| `headers` | `Record<string, string>` | Optional. Custom response headers |
+```ts
+new HttpError(status, body?, headers?)
+```
 
-```typescript
+Examples:
+
+```ts
 throw new HttpError(403);
-// → 403, no body
-
 throw new HttpError(404, "User not found");
-// → 404, { "message": "User not found" }
-
-throw new HttpError(422, { message: "Validation failed", errors: ["field required"] });
-// → 422, { "message": "Validation failed", "errors": ["field required"] }
-
-throw new HttpError(401, "Unauthorized", { "WWW-Authenticate": "Bearer" });
-// → 401, { "message": "Unauthorized" }, WWW-Authenticate: Bearer
+throw new HttpError(422, {
+  message: "Validation failed",
+  errors: ["field required"],
+});
+throw new HttpError(401, "Unauthorized", {
+  "WWW-Authenticate": "Bearer",
+});
 ```
 
-Non-`HttpError` exceptions thrown in handlers or middleware return `500` without exposing internal error details:
+Unhandled non-`HttpError` exceptions become:
 
-```typescript
-const crashRoute = api(
-  { method: "GET", path: "/crash" },
-  async () => { throw new Error("database failed"); },
-);
-// → 500, { "message": "Internal Server Error" }
+```json
+{ "message": "Internal Server Error" }
 ```
 
-### Custom Error Handling
+with status `500`.
 
-`routes()` supports an `onError` option for customizing error handling at the route-group level. Different route groups can use different error-handling strategies:
+### Group-Level `onError`
 
-```typescript
-import { api, routes, createRouter, handleError, HttpError } from "typedapi.ts";
+`routes()` supports group-specific error handling. Use `handleError()` as a fallback when you want the framework default behavior for unrecognized exceptions.
+
+```ts
+import { api, routes, createRouter, handleError } from "typedapi.ts";
 
 class ValidationError extends Error {
   fields: string[];
+
   constructor(fields: string[]) {
     super("Validation failed");
     this.fields = fields;
@@ -780,14 +864,14 @@ class ValidationError extends Error {
 const apiRoutes = routes(
   {
     prefix: "/api",
-    onError: (error, request) => {
+    onError: (error, _request) => {
       if (error instanceof ValidationError) {
         return Response.json(
           { message: error.message, fields: error.fields },
           { status: 422 },
         );
       }
-      // Fall back to default handling for other errors (HttpError → matching response, others → 500)
+
       return handleError(error);
     },
   },
@@ -800,33 +884,23 @@ const apiRoutes = routes(
 export default createRouter(apiRoutes);
 ```
 
-`onError` callback parameters:
+## Dependency Injection
 
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `error` | `unknown` | The captured exception |
-| `request` | `Request` | The current request object |
+`inject()` declares request-scoped dependencies. Use `Inject<typeof dependency>` in handler params.
 
-Route groups without `onError`, as well as standalone routes not included in any `routes()`, are handled by `createRouter`'s default fallback logic (`HttpError` -> corresponding response, everything else -> `500`). `handleError` is exported as the default handler and can be called as a fallback inside custom `onError` implementations.
+### Generator-based injection with cleanup
 
-### Dependency Injection
-
-`inject()` is used to declare request-scoped dependencies. You can define resources with cleanup logic using an async generator (initialize before `yield`, clean up after `yield`), or define dependencies without cleanup using a regular async function. Annotate a handler parameter with `Inject<typeof X>` to have it injected automatically.
-
-```typescript
+```ts
 import { api, createRouter, inject, type Inject, type Path } from "typedapi.ts";
 
-// Define dependency — generator pattern (with cleanup)
 const db = inject(async function* () {
   const client = await connectDb();
   yield client;
   await client.close();
-}); // Defaults to cache: true — reuses the same instance within a request
+});
 
-// Define dependency — plain async function (no cleanup)
 const requestId = inject(async () => crypto.randomUUID());
 
-// Annotate handler params with Inject<typeof X> for automatic injection
 const getUser = api(
   { method: "GET", path: "/users/:id" },
   async (params: {
@@ -842,21 +916,19 @@ const getUser = api(
 export default createRouter([getUser]);
 ```
 
-At compile time, the transformer automatically recognizes `Inject<typeof X>` type annotations, extracts references to injectable variables, and injects them into the route configuration. At runtime, the framework automatically does the following for each request:
+Behavior:
 
-1. Call the inject function to obtain the dependency value
-2. Merge the dependency value into the handler's `params`
-3. Execute generator cleanup code in reverse order after the request finishes (even if the handler throws)
+1. The framework resolves injectables for the request.
+2. Resolved values are merged into the handler `params`.
+3. Generator cleanup runs after the request in reverse order, even on errors.
 
-The `cache` option controls reuse within the same request:
-- `cache: true` (default): the same injectable is initialized only once per request, and all usages share the same instance
-- `cache: false`: the inject function is called again each time it is used
+`cache: true` is the default. Set `cache: false` when you need a fresh value for each usage.
 
-### Typed Dependency Injection
+## Typed Injectable Metadata
 
-`inject()` handlers can declare required request parameters using `Path`, `Query`, `Header`, `Cookie`, and `Json` type annotations, just like `api()` and `middleware()`, and can also declare possible error responses with `JsonResponse`. The transformer automatically extracts parameter and response metadata at compile time, and at runtime the framework passes parsed request parameters into the inject function. Parameter and response metadata from `inject()` are automatically merged into the OpenAPI document of routes that use that inject function (precedence: `middleware` < `inject` < `route`).
+`inject()` handlers can also use wrapper types and `JsonResponse` so they can participate in OpenAPI metadata generation.
 
-```typescript
+```ts
 import {
   api,
   createRouter,
@@ -891,26 +963,36 @@ const getUser = api(
 export default createRouter([getUser]);
 ```
 
-### Compile-Time Parameter Metadata Injection
+OpenAPI merge precedence is:
 
-With `ts-patch` enabled, place the custom transformer before `typia`. At compile time, it directly analyzes the type of the first parameter of an `api()` handler and injects parameter metadata literals into the `parameters` field of `api()`'s third argument; it also analyzes the `JsonResponse` return type and injects response metadata literals into the `responses` field. It also analyzes the type of the first parameter of the inner handler returned by the `middleware()` outer handler, injects parameter metadata literals into the `parameters` field of `middleware()`'s second argument, and extracts response metadata from the inner handler's return type into `responses`. If `parameters` or `responses` are already provided manually, they are not overwritten.
+`middleware < inject < route`
+
+## Compile-Time Metadata Extraction
+
+With the transformer enabled, typedapi analyzes handler types at compile time:
+
+- `api()` reads the first handler parameter type and generates `parameters`
+- `api()` reads `JsonResponse` return types and generates `responses`
+- `middleware()` reads the inner handler parameter type and return type the same way
+- `inject()` can contribute parameter and response metadata through typed params and `JsonResponse`
+- manually supplied `parameters` or `responses` are preserved
 
 ```json
 {
   "compilerOptions": {
     "plugins": [
-      { "transform": "./transform.cjs" },
+      { "transform": "typedapi.ts/transform" },
       { "transform": "typia/lib/transform" }
     ]
   }
 }
 ```
 
-### Parameter Metadata (OpenAPI)
+### Wrapper Metadata For OpenAPI
 
-Wrapper metadata for `Path` / `Query` / `Header` / `Cookie` / `Json` is automatically extracted and injected at compile time. There is no need to `import typia` or use `ParamsSchema`. The type syntax itself stays the same:
+The second generic on wrapper types is metadata used for OpenAPI:
 
-```typescript
+```ts
 import {
   api,
   createRouter,
@@ -958,7 +1040,7 @@ interface UpdateProductParams {
     {
       title: "API version";
       deprecated: true;
-      description: "Please migrate to URL versioning; this header will be removed in v3";
+      description: "Move to URL versioning before v3";
     }
   >;
   storeId: Cookie<
@@ -980,19 +1062,20 @@ const updateProduct = api(
 export default createRouter([updateProduct]);
 ```
 
-Sources of OpenAPI parameter metadata:
+Supported metadata keys:
 
-- `title`, `description`, `alias`, `example`, and `deprecated` are all read from the second generic parameter `Meta` of `Path<T, Meta>` / `Query<T, Meta>` / `Header<T, Meta>` / `Cookie<T, Meta>` / `Json<T, Meta>`
-- The compile-time transformer directly generates parameter metadata literals containing `__entries` and `__body`
-- `Inject<typeof injectable>` type annotations are automatically recognized by the transformer and converted into inject configuration, and do not appear in OpenAPI parameter documentation
-- Optional properties are not added to `required`
+- `title`
+- `description`
+- `alias`
+- `example`
+- `deprecated`
 
-### Generating OpenAPI 3.1 Documents
+## OpenAPI 3.1 Generation
 
-`openapi()` traverses routes with `expose: true` and reads the parameter and response metadata automatically injected at compile time into the third argument of `api()`. For `JsonResponse<Status, Headers, Body>` (including unions), it automatically generates OpenAPI `responses`; if needed, you can still manually pass `{ parameters, responses }` to override the default behavior:
+Use `openapi()` to build a document from routes with `expose: true`.
 
-```typescript
-import { api, openapi, type JsonResponse, type Json } from "typedapi.ts";
+```ts
+import { api, openapi, type Json, type JsonResponse } from "typedapi.ts";
 
 interface Order {
   id: number;
@@ -1004,7 +1087,6 @@ interface Message {
 }
 
 interface CreateOrderParams {
-  /** @title Customer name */
   customer: Json<string>;
 }
 
@@ -1028,20 +1110,22 @@ const document = openapi({
 });
 ```
 
-The generated result is an OpenAPI 3.1 object and currently includes:
+Generated output includes:
 
 - `paths`
-- path parameters (`/orders/:id` -> `/orders/{id}`; if `parameters` are absent, they are generated as a fallback automatically)
-- query / header / cookie parameters (from parameter metadata literals injected by the transformer)
-- JSON `requestBody` (from `Json<T>` fields)
-- JSON `responses` (from `JsonResponse` metadata injected by the transformer, also compatible with manually provided typia schemas)
+- path parameters, including `:id -> {id}`
+- query, header, and cookie parameters
+- JSON `requestBody`
+- JSON `responses` from `JsonResponse`
 - `components.schemas`
 
-If an exposed route has no response schema attached, `openapi()` generates a default empty `200` response for it.
+If an exposed route has no response schema, `openapi()` emits a default empty `200` response.
 
-### Runtime Validation (Typia)
+## Runtime Validation With Typia
 
-```typescript
+Use `typia.createValidate<T>()` in the third `api()` argument when runtime validation is needed.
+
+```ts
 import typia from "typia";
 import { api, createRouter, Json, Path, Query } from "typedapi.ts";
 
@@ -1070,4 +1154,6 @@ const updateSeat = api(
 export default createRouter([updateSeat]);
 ```
 
-The third argument to `api()` uses the `{ validate, responses, parameters }` shape.
+The validator shape used by `api()` is compatible with the exported `Validate<T>` type.
+
+The third `api()` argument also accepts manual `responses`, `parameters`, and `inject` entries when needed.
