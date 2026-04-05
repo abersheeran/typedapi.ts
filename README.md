@@ -2,6 +2,16 @@
 
 A type-safe Web framework based on the standard fetch interface, using Typia for runtime validation.
 
+## AI Skills
+
+Install the [Agent Skill](https://agentskills.io) for AI-assisted development with typedapi.ts:
+
+```bash
+npx skills add abersheeran/typedapi-ts
+```
+
+This gives Claude Code, Cursor, GitHub Copilot, and other AI agents context about the framework's API, patterns, and conventions.
+
 ## Installation
 
 ```bash
