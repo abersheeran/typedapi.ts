@@ -186,7 +186,7 @@ Middleware uses the onion model. The signature is:
 
 Use `middleware()` when you want typed reusable middleware that can also contribute OpenAPI metadata.
 
-Use `routes()` to add a common prefix, middleware stack, or group-level `onError` handler. Group middleware runs before route-level middleware. Nested `routes()` calls stack both prefixes and middleware.
+Use `routes()` to add a common prefix, middleware stack, group-level `tags`, or group-level `onError` handler. Group middleware runs before route-level middleware. Nested `routes()` calls stack prefixes and middleware, and merge group tags ahead of route tags with deduplication.
 
 ```ts
 import { api, createRouter, Header, middleware, routes } from "typedapi.ts";
@@ -296,6 +296,8 @@ const document = openapi({
 Rules:
 
 - only routes with `expose: true` are included
+- route config also accepts operation metadata: `tags`, `summary`, `description`, `operationId`, `deprecated`, and `externalDocs`
+- `routes({ tags })` prepends shared tags to child routes and removes duplicates
 - the transformer extracts parameter metadata from wrapper types
 - the transformer extracts response metadata from `JsonResponse`
 - middleware and inject metadata are merged into route docs

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, test } from "vitest";
 import {
   api,
   routeParametersSymbol,
@@ -413,6 +413,23 @@ describe("nested routes middleware stacking", () => {
     await app(req("GET", "/api/test"));
     expect(order).toEqual(["mw1", "mw2", "handler"]);
   });
+});
+
+test("routes() merges group tags and omits tags when neither group nor child defines them", () => {
+  const [merged] = routes(
+    { tags: ["v1", "users"] },
+    api(
+      { method: "GET", path: "/users", tags: ["users", "detail"] },
+      async () => ({ ok: true }),
+    ),
+  );
+  const [plain] = routes(
+    {},
+    api({ method: "GET", path: "/health" }, async () => ({ ok: true })),
+  );
+
+  expect(merged.config.tags).toEqual(["v1", "users", "detail"]);
+  expect(plain.config).not.toHaveProperty("tags");
 });
 
 // ── createRouter 接受嵌套数组 ──

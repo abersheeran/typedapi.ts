@@ -653,6 +653,14 @@ export function openapi(config: OpenAPIConfig) {
     }
 
     document.paths[path][method] = {
+      ...(route.config.tags?.length ? { tags: route.config.tags } : {}),
+      ...(route.config.summary ? { summary: route.config.summary } : {}),
+      ...(route.config.description
+        ? { description: route.config.description }
+        : {}),
+      ...(route.config.operationId
+        ? { operationId: route.config.operationId }
+        : {}),
       parameters,
       ...(requestBody ? { requestBody } : {}),
       responses: {
@@ -660,6 +668,10 @@ export function openapi(config: OpenAPIConfig) {
         ...injectResponses,
         ...routeResponses,
       },
+      ...(route.config.deprecated === true ? { deprecated: true } : {}),
+      ...(route.config.externalDocs
+        ? { externalDocs: route.config.externalDocs }
+        : {}),
     };
   }
 

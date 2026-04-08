@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { api } from "../src/api.js";
 import { inject } from "../src/inject.js";
 import { middleware } from "../src/middleware.js";
@@ -1843,5 +1843,101 @@ describe("openapi", () => {
         schema: { type: "number" },
       },
     ]);
+  });
+
+  test("emits operation-level OpenAPI metadata from api()", () => {
+    const route = api(
+      {
+        method: "GET",
+        path: "/users/:id",
+        expose: true,
+        tags: ["users"],
+        summary: "Get user",
+        description: "Return a user by ID",
+        operationId: "getUser",
+        deprecated: true,
+        externalDocs: {
+          url: "https://example.com/docs",
+          description: "More",
+        },
+      },
+      async () => ({ id: 1 }),
+    );
+
+    const document = openapi({
+      info: { title: "Test", version: "1.0.0" },
+      routes: [route],
+    });
+
+    expect(document.paths["/users/{id}"].get).toMatchObject({
+      tags: ["users"],
+      summary: "Get user",
+      description: "Return a user by ID",
+      operationId: "getUser",
+      deprecated: true,
+      externalDocs: {
+        url: "https://example.com/docs",
+        description: "More",
+      },
+      parameters: [
+        {
+          name: "id",
+          in: "path",
+          required: true,
+          schema: { type: "string" },
+        },
+      ],
+    });
+  });
+
+  test("merges and deduplicates group tags into route operations", () => {
+    const groupedRoutes = routes(
+      { prefix: "/api", tags: ["v1", "users"] },
+      api(
+        {
+          method: "GET",
+          path: "/users/:id",
+          expose: true,
+          tags: ["users", "detail"],
+        },
+        async () => ({ id: 1 }),
+      ),
+      api(
+        { method: "GET", path: "/health", expose: true },
+        async () => ({ ok: true }),
+      ),
+    );
+
+    const document = openapi({
+      info: { title: "Test", version: "1.0.0" },
+      routes: groupedRoutes,
+    });
+
+    expect(document.paths["/api/users/{id}"].get.tags).toEqual([
+      "v1",
+      "users",
+      "detail",
+    ]);
+    expect(document.paths["/api/health"].get.tags).toEqual(["v1", "users"]);
+  });
+
+  test("omits unset operation metadata keys", () => {
+    const route = api(
+      { method: "GET", path: "/plain", expose: true },
+      async () => ({ ok: true }),
+    );
+
+    const document = openapi({
+      info: { title: "Test", version: "1.0.0" },
+      routes: [route],
+    });
+
+    const op = document.paths["/plain"].get;
+    expect(op).not.toHaveProperty("tags");
+    expect(op).not.toHaveProperty("summary");
+    expect(op).not.toHaveProperty("description");
+    expect(op).not.toHaveProperty("operationId");
+    expect(op).not.toHaveProperty("deprecated");
+    expect(op).not.toHaveProperty("externalDocs");
   });
 });

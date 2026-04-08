@@ -24,6 +24,7 @@
 - 通过 `HtmlResponse` / `TextResponse` / `StreamResponse` / `SseResponse` 标记非 JSON 响应
 - 通过 `createRouter(routes)` 生成标准 `(request: Request) => Promise<Response>` 处理函数
 - 通过 `openapi({ info, routes, servers })` 从暴露路由生成 OpenAPI 3.1 文档
+- `RouteConfig` 支持 OpenAPI operation 元数据：`tags` / `summary` / `description` / `operationId` / `deprecated` / `externalDocs`；`routes({ tags })` 会将组级 tags 与子路由 tags 合并去重，`openapi()` 会将这些字段输出到 operation object
 - `RouteConfig` 支持声明式 `middlewares`
 - 通过 `json()` / `html()` / `text()` / `stream()` / `sse()` / `redirect()` / `file()` 构造标准 `Response`，响应 helper 的 `headers` 支持单值与多值，并允许显式覆盖默认 `content-type`
 - 通过 `cookie()` / `clearCookie()` 便捷序列化 `Set-Cookie` header 值

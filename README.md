@@ -1007,6 +1007,37 @@ Sources of OpenAPI parameter metadata:
 - `Inject<typeof injectable>` type annotations are automatically recognized by the transformer and converted into inject configuration, and do not appear in OpenAPI parameter documentation
 - Optional properties are not added to `required`
 
+### Operation Metadata
+
+You can attach OpenAPI operation fields directly on `api()` route config. `routes({ tags })` prepends shared tags and deduplicates them against route-level tags:
+
+```typescript
+import { api, openapi, routes } from "typedapi.ts";
+
+const getUser = api(
+  {
+    method: "GET",
+    path: "/users/:id",
+    expose: true,
+    tags: ["users"],
+    summary: "Get user",
+    description: "Return a user by ID",
+    operationId: "getUser",
+    externalDocs: {
+      url: "https://example.com/docs/users#get-user",
+    },
+  },
+  async () => ({ id: 1 }),
+);
+
+const apiRoutes = routes({ prefix: "/api", tags: ["v1"] }, getUser);
+
+const document = openapi({
+  info: { title: "Users API", version: "1.0.0" },
+  routes: apiRoutes,
+});
+```
+
 ### Generating OpenAPI 3.1 Documents
 
 `openapi()` traverses routes with `expose: true` and reads the parameter and response metadata automatically injected at compile time into the third argument of `api()`. For `JsonResponse<Status, Headers, Body>` (including unions), it automatically generates OpenAPI `responses`; if needed, you can still manually pass `{ parameters, responses }` to override the default behavior:
@@ -1051,6 +1082,7 @@ const document = openapi({
 The generated result is an OpenAPI 3.1 object and currently includes:
 
 - `paths`
+- operation-level `tags`, `summary`, `description`, `operationId`, `deprecated`, and `externalDocs`
 - path parameters (`/orders/:id` -> `/orders/{id}`; if `parameters` are absent, they are generated as a fallback automatically)
 - query / header / cookie parameters (from parameter metadata literals injected by the transformer)
 - JSON `requestBody` (from `Json<T>` fields)

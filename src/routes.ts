@@ -13,6 +13,7 @@ import type { AnyRoute, Middleware, RouteMatch } from "./types.js";
 interface RoutesConfig {
   prefix?: string;
   middlewares?: Middleware[];
+  tags?: string[];
   onError?: (error: unknown, request: Request) => Response | Promise<Response>;
 }
 
@@ -25,11 +26,15 @@ type InternalRoute = AnyRoute & {
 
 export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
   return items.map((route) => {
+    const { tags: routeTags, ...routeConfig } = route.config;
     const method = route.config.method.toUpperCase();
     const path = joinPath(config.prefix ?? "", route.config.path);
     const middlewares = [
       ...(config.middlewares ?? []),
       ...(route.config.middlewares ?? []),
+    ];
+    const tags = [
+      ...new Set([...(config.tags ?? []), ...(routeTags ?? [])]),
     ];
     const matchPath = createPathMatcher(path);
     const matchRequest = (request: Request, url?: URL): RouteMatch | null => {
@@ -49,7 +54,13 @@ export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
     const effectiveOnError = existingOnError ?? config.onError;
 
     const wrapped: AnyRoute = {
-      config: { ...route.config, method, path, middlewares },
+      config: {
+        ...routeConfig,
+        method,
+        path,
+        middlewares,
+        ...(tags.length ? { tags } : {}),
+      },
       handler: route.handler,
       match(request, url) {
         return matchRequest(request, url);

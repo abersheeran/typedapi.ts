@@ -135,6 +135,15 @@ export interface RouteConfig {
   expose?: boolean;
   middlewares?: Middleware[];
   inject?: Record<string, Injectable<any>>;
+  tags?: string[];
+  summary?: string;
+  description?: string;
+  operationId?: string;
+  deprecated?: boolean;
+  externalDocs?: {
+    url: string;
+    description?: string;
+  };
 }
 
 export interface RouteMatch {

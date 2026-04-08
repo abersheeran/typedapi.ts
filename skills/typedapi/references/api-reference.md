@@ -681,7 +681,7 @@ const getUsers = api(
 );
 ```
 
-`routes()` groups routes under shared prefix and middleware:
+`routes()` groups routes under shared prefix, middleware, and optional shared tags:
 
 ```ts
 import { api, routes, createRouter, type Middleware } from "typedapi.ts";
@@ -704,12 +704,16 @@ const getItems = api(
   async () => [{ id: 2 }],
 );
 
-const apiRoutes = routes({ prefix: "/api", middlewares: [auth] }, getUsers, getItems);
+const apiRoutes = routes(
+  { prefix: "/api", middlewares: [auth], tags: ["v1"] },
+  getUsers,
+  getItems,
+);
 
 export default createRouter(apiRoutes);
 ```
 
-Nested groups stack both prefix and middleware:
+Nested groups stack prefix and middleware. Group tags merge ahead of child tags with deduplication:
 
 ```ts
 import { api, routes, type Middleware } from "typedapi.ts";
@@ -1079,7 +1083,7 @@ Supported metadata keys:
 
 ## OpenAPI 3.1 Generation
 
-Use `openapi()` to build a document from routes with `expose: true`.
+Use `openapi()` to build a document from routes with `expose: true`. Route config supports operation metadata fields such as `tags`, `summary`, `description`, `operationId`, `deprecated`, and `externalDocs`, and `routes({ tags })` merges shared tags into child operations.
 
 ```ts
 import { api, openapi, type Json, type JsonResponse } from "typedapi.ts";
@@ -1120,6 +1124,7 @@ const document = openapi({
 Generated output includes:
 
 - `paths`
+- operation-level `tags`, `summary`, `description`, `operationId`, `deprecated`, and `externalDocs`
 - path parameters, including `:id -> {id}`
 - query, header, and cookie parameters
 - JSON `requestBody`
