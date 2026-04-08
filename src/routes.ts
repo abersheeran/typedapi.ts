@@ -3,6 +3,7 @@ import {
   executeRoute,
   extractParams,
   jsonResponse,
+  routeParametersSymbol,
   routeResponsesSymbol,
   routeValidateSymbol,
 } from "./api.js";
@@ -15,6 +16,7 @@ interface RoutesConfig {
 }
 
 type InternalRoute = AnyRoute & {
+  [routeParametersSymbol]?: unknown;
   [routeValidateSymbol]?: (input: unknown) => unknown;
   [routeResponsesSymbol]?: unknown;
 };
@@ -85,6 +87,11 @@ export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
     const responses = (route as InternalRoute)[routeResponsesSymbol];
     if (responses) {
       (wrapped as InternalRoute)[routeResponsesSymbol] = responses;
+    }
+
+    const parameters = (route as InternalRoute)[routeParametersSymbol];
+    if (parameters) {
+      (wrapped as InternalRoute)[routeParametersSymbol] = parameters;
     }
 
     return wrapped;

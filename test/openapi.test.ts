@@ -357,6 +357,42 @@ describe("openapi", () => {
     expect(document.paths["/api/orders/{id}"]).toBeDefined();
   });
 
+  it("preserves parameters metadata through routes() prefix wrapping", () => {
+    const [route] = routes(
+      { prefix: "/api" },
+      api(
+        { method: "GET", path: "/reports/:id", expose: true },
+        async () => ({ ok: true }),
+        {
+          parameters: {
+            __entries: [
+              {
+                name: "id",
+                in: "path",
+                required: true,
+                schema: { type: "string" },
+              },
+            ],
+          },
+        },
+      ),
+    );
+
+    const document = openapi({
+      info: { title: "Test", version: "1.0.0" },
+      routes: [route],
+    });
+
+    expect(document.paths["/api/reports/{id}"].get.parameters).toEqual([
+      {
+        name: "id",
+        in: "path",
+        required: true,
+        schema: { type: "string" },
+      },
+    ]);
+  });
+
   it("generates parameters from __params metadata", () => {
     const route = api(
       { method: "GET", path: "/products/:id", expose: true },

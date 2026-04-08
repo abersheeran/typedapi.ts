@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { api, routeResponsesSymbol } from "../src/api.js";
+import {
+  api,
+  routeParametersSymbol,
+  routeResponsesSymbol,
+} from "../src/api.js";
 import { routes } from "../src/routes.js";
 import { createRouter } from "../src/router.js";
 
@@ -158,6 +162,22 @@ describe("routes validation passthrough", () => {
 
     expect((wrapped as Record<symbol, unknown>)[routeResponsesSymbol]).toBe(
       responses,
+    );
+  });
+
+  it("parameters metadata is preserved when wrapped by routes()", () => {
+    const parameters = { __entries: [], __body: null };
+    const [wrapped] = routes(
+      { prefix: "/api" },
+      api(
+        { method: "GET", path: "/x" },
+        async () => ({ ok: true }),
+        { parameters },
+      ),
+    );
+
+    expect((wrapped as Record<symbol, unknown>)[routeParametersSymbol]).toBe(
+      parameters,
     );
   });
 });
