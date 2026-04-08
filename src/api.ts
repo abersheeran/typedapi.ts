@@ -4,6 +4,7 @@ import { resolveInjectables } from "./inject.js";
 import type { Injectable } from "./inject.js";
 import type {
   Middleware,
+  RequestParams,
   Route,
   RouteConfig,
   RouteHandler,
@@ -38,10 +39,10 @@ export function api<THandler extends (...args: any[]) => any>(
   config: RouteConfig,
   handler: THandler,
   optionsOrValidate?:
-    | Validate<HandlerParams<THandler>>
+    | Validate<RequestParams<HandlerParams<THandler>>>
     | {
         parameters?: unknown;
-        validate?: Validate<HandlerParams<THandler>>;
+        validate?: Validate<RequestParams<HandlerParams<THandler>>>;
         responses?: unknown;
         inject?: Record<string, Injectable<any>>;
       },
@@ -323,20 +324,13 @@ export async function executeRoute(
   route: Route<any, any>,
   params: Record<string, unknown>,
 ): Promise<Response> {
-  const injectConfig = route.config.inject;
   let cleanup: (() => Promise<void>) | undefined;
+  const middlewares = route.config.middlewares ?? [];
+  const validate = (route as InternalRoute)[routeValidateSymbol];
+  const injectConfig = route.config.inject;
+  const handler = route.handler as RouteHandler<Record<string, unknown>, unknown>;
 
   try {
-    if (injectConfig && Object.keys(injectConfig).length > 0) {
-      const resolved = await resolveInjectables(injectConfig, params);
-      Object.assign(params, resolved.values);
-      cleanup = resolved.cleanup;
-    }
-
-    const middlewares = route.config.middlewares ?? [];
-    const validate = (route as InternalRoute)[routeValidateSymbol];
-    const handler = route.handler as RouteHandler<Record<string, unknown>, unknown>;
-
     const innerHandler = async (currentParams: Record<string, unknown>) => {
       if (validate) {
         const result = validate(currentParams);
@@ -346,9 +340,13 @@ export async function executeRoute(
             400,
           );
         }
+        currentParams = result.data as Record<string, unknown>;
+      }
 
-        const response = await handler(result.data as Record<string, unknown>);
-        return toResponse(response);
+      if (injectConfig && Object.keys(injectConfig).length > 0) {
+        const resolved = await resolveInjectables(injectConfig, currentParams);
+        Object.assign(currentParams, resolved.values);
+        cleanup = resolved.cleanup;
       }
 
       const result = await handler(currentParams);

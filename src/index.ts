@@ -23,6 +23,7 @@ export type { CorsOptions } from "./cors.js";
 export type { CookieOptions, HeaderValues } from "./response.js";
 export type { RequestContext } from "./context.js";
 export type {
+  AnyRoute,
   Cookie,
   Form,
   Header,
@@ -34,6 +35,7 @@ export type {
   ParamsSchema,
   Path,
   Query,
+  RequestParams,
   Route,
   RouteConfig,
   RouteHandler,

@@ -7,7 +7,7 @@ import {
   middlewareParametersSymbol,
   middlewareResponsesSymbol,
 } from "./middleware.js";
-import type { Route } from "./types.js";
+import type { AnyRoute } from "./types.js";
 
 interface OpenAPIConfig {
   info: {
@@ -15,7 +15,7 @@ interface OpenAPIConfig {
     version: string;
     description?: string;
   };
-  routes: Route<any, any>[];
+  routes: AnyRoute[];
   servers?: { url: string; description?: string }[];
 }
 

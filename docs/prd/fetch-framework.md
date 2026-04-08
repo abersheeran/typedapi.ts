@@ -6,7 +6,7 @@
 
 ## 用户接口
 
-- 通过 `api(config, handler, validate?)` 或 `api(config, handler, { validate, responses, parameters })` 声明路由
+- 通过 `api(config, handler, validate?)` 或 `api(config, handler, { validate, responses, parameters })` 声明路由；`validate` 的类型为 `Validate<RequestParams<HandlerParams<T>>>`
 - 通过 `middleware(handler, { responses, parameters }?)` 声明带文档元数据的 typed middleware
 - 通过 `cors(options?)` 声明不携带 OpenAPI 元数据的 CORS middleware
 - 通过 `routes(config, ...items)` 聚合路由并叠加 prefix / middlewares
@@ -27,7 +27,8 @@
 - `RouteConfig` 支持声明式 `middlewares`
 - 通过 `json()` / `html()` / `text()` / `stream()` / `sse()` / `redirect()` / `file()` 构造标准 `Response`，响应 helper 的 `headers` 支持单值与多值，并允许显式覆盖默认 `content-type`
 - 通过 `cookie()` / `clearCookie()` 便捷序列化 `Set-Cookie` header 值
-- 框架导出与 `typia` 返回结构兼容的 `Validate<T>` 类型，调用点可传入任意符合该协议的 validator；`typia.createValidate<ConcreteType>()` 只是可选实现之一
+- 框架导出与 `typia` 返回结构兼容的 `Validate<T>` 类型；`api()` 的 `validate` 推荐在调用点使用 `typia.createValidate<RequestParams<ConcreteType>>()`，并通过 `RequestParams<T>` 剔除 `Inject<>` 字段避免校验运行时注入对象
+- 框架导出 `RequestParams<T>` 工具类型，用于从 handler 参数类型中剔除带 `__inject` brand 的字段
 - 可通过 `{ validate, responses, parameters }` 启用运行时校验并补充文档元数据；编译时 transformer 默认会直接从 handler 参数类型生成 OpenAPI 参数元数据，并从 `JsonResponse` 返回类型生成响应元数据；调用点显式提供 `parameters` / `responses` 时不覆盖
 - 编译时 transformer 同样会从 `middleware()` handler 返回的 inner handler 参数类型提取 wrapper 元数据并注入 `parameters`，并从 inner handler 返回类型中的 `JsonResponse` brand 提取 `responses`；`openapi()` 会按 middleware 声明顺序收集其 `__entries` / `__body` / `__responses`，再与 route 自身元数据合并，且 route 对同名同位置参数、requestBody 与同状态码 responses 拥有更高优先级
 - 通过 `HttpError(status, body?, headers?)` 在 handler 或 middleware 中抛出受控的 HTTP 错误响应
@@ -46,6 +47,7 @@
 - 参数合并优先级为 `path > body > query > cookie > header`
 - 提供可选的运行时参数校验，校验失败返回 `400`
 - 支持 route 级与 route-group 级 middleware，执行顺序为外层到内层再到 handler
+- 命中 route 后的执行顺序为 `middleware 外层 → validate → inject → handler → middleware 内层`，`validate` 失败直接返回 `400` 且不会触发 `inject`
 - 支持可配置的 CORS middleware，处理普通请求与 preflight 请求头写入
 - handler 返回值自动转换为响应：`Response` 透传，`null` 转为 `204`，`string` 转为文本响应，`ReadableStream` 转为二进制流响应，`AsyncIterable` 转为 SSE，其余值转为 JSON 响应
 - `JsonResponse` 使用字符串键 `__response` 暴露状态码与响应头元数据，便于 schema 生成工具读取
@@ -76,7 +78,7 @@
 ## 实现约束
 
 - 项目使用 ESM 与 TypeScript `NodeNext`
-- 包需要可直接发布到 npm，运行时不强依赖 `typia` 或 `ts-patch`；二者作为可选 peer dependency 由使用方按需安装
+- 包需要可直接发布到 npm，`typia` 和 `ts-patch` 是 required peer dependency，任何使用 `api()` 进行运行时参数校验的文件都必须手写 `typia.createValidate<RequestParams<HandlerParamType>>()`
 - 自定义 transformer（`transform.cjs`）必须在 `typia/lib/transform` 之前运行，并直接使用 TypeScript type checker 生成参数元数据字面量
 - 由于 `typia` transformer 无法在框架内部解析泛型参数，validator 必须在 `api()` 调用点基于具体类型创建并传入
 - Router 需按 HTTP method 建立索引，并优先以 O(1) 方式命中静态 path，再回退到动态 path 扫描

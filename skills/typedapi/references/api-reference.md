@@ -65,6 +65,7 @@ Framework and utility types:
 - `RequestContext`
 - `requestSymbol`
 - `Validate<T>`
+- `RequestParams<T>`
 - `Route`
 - `RouteConfig`
 - `RouteMatch`
@@ -77,17 +78,16 @@ Install the framework:
 npm install typedapi.ts
 ```
 
-Install optional transformer support:
+`typia` and `ts-patch` are required peer dependencies and are installed automatically alongside `typedapi.ts` (npm 7+). Use `tspc` (from `ts-patch`) instead of `tsc` in your build scripts. `tspc` is a drop-in replacement that applies custom transformers without patching your TypeScript installation.
 
-```bash
-npm install -D ts-patch
-npx ts-patch install
-```
+Use `tspc -p tsconfig.json` in your `package.json` scripts:
 
-Install Typia only when runtime validation is needed:
-
-```bash
-npm install typia
+```json
+{
+  "scripts": {
+    "build": "tspc -p tsconfig.json"
+  }
+}
 ```
 
 Configure `tsconfig.json` with the typedapi transformer before Typia:
@@ -104,6 +104,8 @@ Configure `tsconfig.json` with the typedapi transformer before Typia:
 ```
 
 The transformer extracts OpenAPI parameter and response metadata from handler types at compile time.
+
+`typia` and `ts-patch` are required peer dependencies. The transformer injects `parameters`, `responses`, and `inject` metadata, but it does not generate `validate`.
 
 ## Basic Router And CRUD Routes
 
@@ -918,11 +920,16 @@ export default createRouter([getUser]);
 
 Behavior:
 
-1. The framework resolves injectables for the request.
-2. Resolved values are merged into the handler `params`.
-3. Generator cleanup runs after the request in reverse order, even on errors.
+1. When the route defines `validate`, request-sourced params are validated first.
+2. The framework resolves injectables for the request.
+3. Resolved values are merged into the handler `params`.
+4. Generator cleanup runs after the request in reverse order, even on errors.
 
 `cache: true` is the default. Set `cache: false` when you need a fresh value for each usage.
+
+### `RequestParams<T>`
+
+Use `RequestParams<T>` when a handler param type includes `Inject<typeof dependency>` fields and the route also uses runtime validation. It removes properties branded with `__inject`, so Typia only validates request-sourced fields.
 
 ## Typed Injectable Metadata
 
@@ -1123,37 +1130,46 @@ If an exposed route has no response schema, `openapi()` emits a default empty `2
 
 ## Runtime Validation With Typia
 
-Use `typia.createValidate<T>()` in the third `api()` argument when runtime validation is needed.
+Use `typia.createValidate<RequestParams<T>>()` in the third `api()` argument when runtime validation is needed. Import `typia` in every file that passes `validate` to `api()`.
 
 ```ts
 import typia from "typia";
-import { api, createRouter, Json, Path, Query } from "typedapi.ts";
+import {
+  api,
+  createRouter,
+  inject,
+  type Inject,
+  type Json,
+  type Path,
+  type RequestParams,
+} from "typedapi.ts";
 
-type UpdateSeatParams = {
-  eventId: Path<number>;
-  notify: Query<boolean>;
-  seat: Json<string>;
-  price: Json<number>;
+const db = inject(async () => connectDb());
+
+type CreateUserParams = {
+  id: Path<number>;
+  body: Json<{ name: string }>;
+  db: Inject<typeof db>;
 };
 
-const updateSeat = api(
-  { method: "PUT", path: "/events/:eventId/seats" },
-  async (params: UpdateSeatParams) => {
+const createUser = api(
+  { method: "POST", path: "/users/:id" },
+  async (params: CreateUserParams) => {
     return {
-      eventId: params.eventId,
-      notify: params.notify,
-      seat: params.seat,
-      price: params.price,
+      id: params.id,
+      name: params.body.name,
     };
   },
   {
-    validate: typia.createValidate<UpdateSeatParams>(),
+    validate: typia.createValidate<RequestParams<CreateUserParams>>(),
   },
 );
 
-export default createRouter([updateSeat]);
+export default createRouter([createUser]);
 ```
 
-The validator shape used by `api()` is compatible with the exported `Validate<T>` type.
+The validator shape used by `api()` is compatible with the exported `Validate<RequestParams<T>>` type.
+
+Runtime order is `validate -> inject -> handler`. Validation failures return `400` before injectables are resolved.
 
 The third `api()` argument also accepts manual `responses`, `parameters`, and `inject` entries when needed.

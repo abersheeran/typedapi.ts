@@ -6,7 +6,7 @@ import {
   routeResponsesSymbol,
   routeValidateSymbol,
 } from "./api.js";
-import type { Route, Middleware, RouteMatch } from "./types.js";
+import type { AnyRoute, Middleware, RouteMatch } from "./types.js";
 
 interface RoutesConfig {
   prefix?: string;
@@ -14,12 +14,12 @@ interface RoutesConfig {
   onError?: (error: unknown, request: Request) => Response | Promise<Response>;
 }
 
-type InternalRoute = Route & {
+type InternalRoute = AnyRoute & {
   [routeValidateSymbol]?: (input: unknown) => unknown;
   [routeResponsesSymbol]?: unknown;
 };
 
-export function routes(config: RoutesConfig, ...items: Route[]): Route[] {
+export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
   const onError = config.onError;
 
   return items.map((route) => {
@@ -44,7 +44,7 @@ export function routes(config: RoutesConfig, ...items: Route[]): Route[] {
       return { params: match.params, url: parsed };
     };
 
-    const wrapped: Route = {
+    const wrapped: AnyRoute = {
       config: { ...route.config, method, path, middlewares },
       handler: route.handler,
       match(request, url) {

@@ -1,6 +1,6 @@
 {
   "name": "typedapi.ts",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "type": "module",
   "description": "Type-safe HTTP API framework with automatic OpenAPI generation",
   "license": "MIT",
@@ -24,20 +24,12 @@
   },
   "peerDependencies": {
     "ts-patch": ">=3.0.0",
-    "typia": ">=7.0.0"
-  },
-  "peerDependenciesMeta": {
-    "ts-patch": {
-      "optional": true
-    },
-    "typia": {
-      "optional": true
-    }
+    "typia": ">=10.1.0"
   },
   "devDependencies": {
     "ts-patch": "^3.3.0",
-    "typia": "^10.0.2",
     "typescript": "^5.9.2",
+    "typia": "^10.1.0",
     "vitest": "^4.1.0"
   }
 }

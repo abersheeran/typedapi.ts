@@ -24,13 +24,7 @@ Install the framework:
 npm install typedapi.ts
 ```
 
-Install optional tooling when needed:
-
-```bash
-npm install typia
-npm install -D ts-patch
-npx ts-patch install
-```
+`typia` and `ts-patch` are required peer dependencies and are installed automatically alongside `typedapi.ts` (npm 7+). Use `tspc` (provided by `ts-patch`) instead of `tsc` in your build scripts. `tspc` is a drop-in `tsc` replacement that applies custom transformers without patching your TypeScript installation.
 
 Use this `tsconfig.json` plugin order when you want compile-time metadata extraction and Typia validation:
 
@@ -48,8 +42,8 @@ Use this `tsconfig.json` plugin order when you want compile-time metadata extrac
 Rules:
 
 - `typedapi.ts/transform` must come before `typia/lib/transform`.
-- `ts-patch` is required for custom transformers.
-- `typia` is optional unless the project uses runtime validation.
+- Use `tspc -p tsconfig.json` (from `ts-patch`) instead of `tsc` in build scripts. `tspc` is a drop-in replacement with no global side effects.
+- `typia` and `ts-patch` are required peer dependencies.
 
 ## Quick Start
 
@@ -102,6 +96,46 @@ const updateUser = api(
   },
 );
 ```
+
+### Validation
+
+Write runtime validators explicitly in the `api()` call. The transformer does not generate `validate`.
+
+```ts
+import typia from "typia";
+import {
+  api,
+  inject,
+  type Inject,
+  type Json,
+  type Path,
+  type RequestParams,
+} from "typedapi.ts";
+
+const db = inject(async () => connectDb());
+
+type CreateUserParams = {
+  id: Path<number>;
+  body: Json<{ name: string }>;
+  db: Inject<typeof db>;
+};
+
+const createUser = api(
+  { method: "POST", path: "/users/:id" },
+  async (params: CreateUserParams) => {
+    return { id: params.id, name: params.body.name };
+  },
+  {
+    validate: typia.createValidate<RequestParams<CreateUserParams>>(),
+  },
+);
+```
+
+Rules:
+
+- Import `typia` in every file that passes `validate` to `api()`.
+- Use `RequestParams<T>` whenever handler params include `Inject<typeof dependency>`.
+- `api()` validation runs on request-sourced params only.
 
 ### Response handling
 
@@ -232,6 +266,8 @@ const getUser = api(
 Notes:
 
 - `cache: true` is the default, so the same injectable instance is reused within one request.
+- If the route also uses `validate`, use `RequestParams<T>` so injected fields are excluded from the validator type.
+- Runtime order is `validate -> inject -> handler`; failed validation returns `400` before injectables are resolved.
 - cleanup runs in reverse order after the request, even if the handler throws.
 - `inject()` handlers can also use `Path`, `Query`, `Header`, `Cookie`, `Json`, and `JsonResponse` so they can contribute request and response metadata.
 

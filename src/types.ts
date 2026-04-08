@@ -37,6 +37,11 @@ export type Form<T, Meta extends ParamMeta = {}> = T & {
   readonly __form?: Meta;
 };
 
+// Exclude runtime injectables from request validation input.
+export type RequestParams<T> = {
+  [K in keyof T as T[K] extends { readonly __inject?: true } ? never : K]: T[K];
+};
+
 type ExtractParamInfo<T> =
   T extends { readonly __path?: infer M extends ParamMeta }
     ? { readonly in: "path" } & { readonly [K in keyof M]: M[K] }
@@ -150,3 +155,5 @@ export interface Route<TParams = unknown, TResult = unknown> {
   match(request: Request, url?: URL): RouteMatch | null;
   handle(request: Request, match?: RouteMatch): Promise<Response>;
 }
+
+export type AnyRoute = Route<any, any>;

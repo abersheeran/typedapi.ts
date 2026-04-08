@@ -1,10 +1,10 @@
 import { handleError } from "./api.js";
-import type { Route } from "./types.js";
+import type { AnyRoute } from "./types.js";
 
-export function createRouter(routes: Route[]) {
+export function createRouter(routes: AnyRoute[]) {
   const index = new Map<
     string,
-    { staticMap: Map<string, Route>; dynamic: Route[] }
+    { staticMap: Map<string, AnyRoute>; dynamic: AnyRoute[] }
   >();
 
   for (const route of routes) {

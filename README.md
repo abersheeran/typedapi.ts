@@ -18,14 +18,21 @@ This gives Claude Code, Cursor, GitHub Copilot, and other AI agents context abou
 npm install typedapi.ts
 ```
 
+`typia` and `ts-patch` are required peer dependencies and are installed automatically alongside `typedapi.ts` (npm 7+). Use `tspc` (provided by `ts-patch`) instead of `tsc` in your build scripts to apply the `typedapi.ts` transformer. `tspc` is a drop-in `tsc` replacement with no global side effects.
+
 ### TypeScript Transform Setup
 
-Install [ts-patch](https://github.com/nonara/ts-patch) to enable automatic OpenAPI generation at compile time:
+Use `tspc` in your `package.json` build scripts:
 
-```bash
-npm install -D ts-patch
-npx ts-patch install
+```json
+{
+  "scripts": {
+    "build": "tspc -p tsconfig.json"
+  }
+}
 ```
+
+`tspc` is shipped by `ts-patch` as a drop-in replacement for `tsc`. It applies custom transformers at compile time without patching your TypeScript installation.
 
 Add the plugin in `tsconfig.json`:
 
@@ -39,15 +46,11 @@ Add the plugin in `tsconfig.json`:
 }
 ```
 
+Then run `npm run build` or `npx tspc` directly instead of `tsc`.
+
 With this configuration, the framework automatically generates OpenAPI parameter and response schemas from the handler's parameter types and return types at compile time, with no manual declarations required.
 
 ### Runtime Validation
-
-Install [typia](https://typia.io):
-
-```bash
-npm install typia
-```
 
 Add the typia plugin in `tsconfig.json` (**it must come after the typedapi.ts transform**):
 
@@ -61,6 +64,10 @@ Add the typia plugin in `tsconfig.json` (**it must come after the typedapi.ts tr
   }
 }
 ```
+
+Any file that passes `validate` to `api()` must `import typia from "typia"` and create the validator manually. The transformer does not auto-generate `validate`.
+
+When handler params include `Inject<typeof dependency>` fields, wrap the handler param type with `RequestParams<T>` so Typia only validates request-sourced fields.
 
 ## Start the Server
 
@@ -854,9 +861,12 @@ export default createRouter([getUser]);
 
 At compile time, the transformer automatically recognizes `Inject<typeof X>` type annotations, extracts references to injectable variables, and injects them into the route configuration. At runtime, the framework automatically does the following for each request:
 
-1. Call the inject function to obtain the dependency value
-2. Merge the dependency value into the handler's `params`
-3. Execute generator cleanup code in reverse order after the request finishes (even if the handler throws)
+1. Validate request-sourced params when the route defines `validate`
+2. Call the inject function to obtain dependency values
+3. Merge the dependency values into the handler's `params`
+4. Execute generator cleanup code in reverse order after the request finishes (even if the handler throws)
+
+The runtime order is `validate → inject → handler`. If validation fails with `400`, injectables are not resolved.
 
 The `cache` option controls reuse within the same request:
 - `cache: true` (default): the same injectable is initialized only once per request, and all usages share the same instance
@@ -903,13 +913,13 @@ export default createRouter([getUser]);
 
 ### Compile-Time Parameter Metadata Injection
 
-With `ts-patch` enabled, place the custom transformer before `typia`. At compile time, it directly analyzes the type of the first parameter of an `api()` handler and injects parameter metadata literals into the `parameters` field of `api()`'s third argument; it also analyzes the `JsonResponse` return type and injects response metadata literals into the `responses` field. It also analyzes the type of the first parameter of the inner handler returned by the `middleware()` outer handler, injects parameter metadata literals into the `parameters` field of `middleware()`'s second argument, and extracts response metadata from the inner handler's return type into `responses`. If `parameters` or `responses` are already provided manually, they are not overwritten.
+With `ts-patch` enabled, place the custom transformer before `typia`. At compile time, it directly analyzes the type of the first parameter of an `api()` handler and injects parameter metadata literals into the `parameters` field of `api()`'s third argument; it also analyzes the `JsonResponse` return type and injects response metadata literals into the `responses` field. It also analyzes the type of the first parameter of the inner handler returned by the `middleware()` outer handler, injects parameter metadata literals into the `parameters` field of `middleware()`'s second argument, and extracts response metadata from the inner handler's return type into `responses`. If `parameters` or `responses` are already provided manually, they are not overwritten. The transformer still does not generate `validate`; runtime validators must be passed explicitly.
 
 ```json
 {
   "compilerOptions": {
     "plugins": [
-      { "transform": "./transform.cjs" },
+      { "transform": "typedapi.ts/transform" },
       { "transform": "typia/lib/transform" }
     ]
   }
@@ -1053,31 +1063,44 @@ If an exposed route has no response schema attached, `openapi()` generates a def
 
 ```typescript
 import typia from "typia";
-import { api, createRouter, Json, Path, Query } from "typedapi.ts";
+import {
+  api,
+  createRouter,
+  inject,
+  type Inject,
+  type Json,
+  type Path,
+  type RequestParams,
+} from "typedapi.ts";
 
-type UpdateSeatParams = {
-  eventId: Path<number>;
-  notify: Query<boolean>;
-  seat: Json<string>;
-  price: Json<number>;
+const db = inject(async () => connectDb());
+
+type CreateUserParams = {
+  id: Path<number>;
+  body: Json<{ name: string }>;
+  db: Inject<typeof db>;
 };
 
-const updateSeat = api(
-  { method: "PUT", path: "/events/:eventId/seats" },
-  async (params: UpdateSeatParams) => {
+const createUser = api(
+  { method: "POST", path: "/users/:id" },
+  async (params: CreateUserParams) => {
     return {
-      eventId: params.eventId,
-      notify: params.notify,
-      seat: params.seat,
-      price: params.price,
+      id: params.id,
+      name: params.body.name,
     };
   },
   {
-    validate: typia.createValidate<UpdateSeatParams>(),
+    validate: typia.createValidate<RequestParams<CreateUserParams>>(),
   },
 );
 
-export default createRouter([updateSeat]);
+export default createRouter([createUser]);
 ```
+
+Import `typia` in every file that uses runtime validation, and build validators manually with `typia.createValidate<RequestParams<HandlerParamType>>()`.
+
+`RequestParams<T>` removes `Inject<>` fields from the validator input, so Typia does not try to validate runtime-injected objects.
+
+The runtime order is `validate → inject → handler`. Validation failures return `400` before injectables are resolved.
 
 The third argument to `api()` uses the `{ validate, responses, parameters }` shape.
