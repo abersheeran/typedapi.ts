@@ -1,6 +1,6 @@
 {
   "name": "typedapi.ts",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Type-safe HTTP API framework with automatic OpenAPI generation",
   "license": "MIT",
