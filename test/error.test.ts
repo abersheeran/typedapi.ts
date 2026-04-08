@@ -276,6 +276,87 @@ describe("routes() custom onError", () => {
   });
 });
 
+describe("nested routes() onError", () => {
+  it("inner onError catches errors when outer has no onError", async () => {
+    const failing = api(
+      { method: "GET", path: "/boom" },
+      async () => {
+        throw new Error("inner-boom");
+      },
+    );
+    const inner = routes(
+      {
+        prefix: "/v1",
+        onError: (error) =>
+          new Response(`INNER:${(error as Error).message}`, { status: 599 }),
+      },
+      failing,
+    );
+    const outer = routes({ prefix: "/api" }, ...inner);
+
+    const app = createRouter(outer);
+    const res = await app(new Request("http://x/api/v1/boom"));
+
+    expect(res.status).toBe(599);
+    expect(await res.text()).toBe("INNER:inner-boom");
+  });
+
+  it("inner onError wins over outer onError when both are set", async () => {
+    const failing = api(
+      { method: "GET", path: "/boom" },
+      async () => {
+        throw new Error("inner-boom");
+      },
+    );
+    const inner = routes(
+      {
+        prefix: "/v1",
+        onError: (error) =>
+          new Response(`INNER:${(error as Error).message}`, { status: 599 }),
+      },
+      failing,
+    );
+    const outer = routes(
+      {
+        prefix: "/api",
+        onError: (error) =>
+          new Response(`OUTER:${(error as Error).message}`, { status: 598 }),
+      },
+      ...inner,
+    );
+
+    const app = createRouter(outer);
+    const res = await app(new Request("http://x/api/v1/boom"));
+
+    expect(res.status).toBe(599);
+    expect(await res.text()).toBe("INNER:inner-boom");
+  });
+
+  it("outer onError applies to routes that have no inner onError", async () => {
+    const failing = api(
+      { method: "GET", path: "/boom" },
+      async () => {
+        throw new Error("plain-boom");
+      },
+    );
+    const inner = routes({ prefix: "/v1" }, failing);
+    const outer = routes(
+      {
+        prefix: "/api",
+        onError: (error) =>
+          new Response(`OUTER:${(error as Error).message}`, { status: 598 }),
+      },
+      ...inner,
+    );
+
+    const app = createRouter(outer);
+    const res = await app(new Request("http://x/api/v1/boom"));
+
+    expect(res.status).toBe(598);
+    expect(await res.text()).toBe("OUTER:plain-boom");
+  });
+});
+
 // ── cleanup 在错误时仍然运行 ──
 
 describe("cleanup runs on error", () => {

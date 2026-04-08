@@ -730,10 +730,32 @@ module.exports = function (program) {
             }
           }
 
+          const bodyProperty = responseType.getProperty("body");
+          let bodySchema;
+          if (bodyProperty) {
+            const bodyType = getSymbolType(bodyProperty);
+            if (bodyType) {
+              const f = bodyType.flags;
+              if (
+                f & ts.TypeFlags.Null ||
+                f & ts.TypeFlags.Undefined ||
+                f & ts.TypeFlags.Void
+              ) {
+                bodySchema = {};
+              } else {
+                bodySchema = typeToJsonSchema(bodyType, 0);
+              }
+            } else {
+              bodySchema = typeToJsonSchema(getResponseBodyType(member), 0);
+            }
+          } else {
+            bodySchema = typeToJsonSchema(getResponseBodyType(member), 0);
+          }
+
           responses.push({
             status: typeof statusValue === "number" ? statusValue : 200,
             headers,
-            schema: typeToJsonSchema(getResponseBodyType(member), 0),
+            schema: bodySchema,
           });
         }
 

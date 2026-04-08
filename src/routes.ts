@@ -3,6 +3,7 @@ import {
   executeRoute,
   extractParams,
   jsonResponse,
+  routeOnErrorSymbol,
   routeParametersSymbol,
   routeResponsesSymbol,
   routeValidateSymbol,
@@ -16,14 +17,13 @@ interface RoutesConfig {
 }
 
 type InternalRoute = AnyRoute & {
+  [routeOnErrorSymbol]?: (error: unknown, request: Request) => Response | Promise<Response>;
   [routeParametersSymbol]?: unknown;
   [routeValidateSymbol]?: (input: unknown) => unknown;
   [routeResponsesSymbol]?: unknown;
 };
 
 export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
-  const onError = config.onError;
-
   return items.map((route) => {
     const method = route.config.method.toUpperCase();
     const path = joinPath(config.prefix ?? "", route.config.path);
@@ -45,6 +45,8 @@ export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
 
       return { params: match.params, url: parsed };
     };
+    const existingOnError = (route as InternalRoute)[routeOnErrorSymbol];
+    const effectiveOnError = existingOnError ?? config.onError;
 
     const wrapped: AnyRoute = {
       config: { ...route.config, method, path, middlewares },
@@ -67,11 +69,11 @@ export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
           return jsonResponse({ message: extracted.message }, 400);
         }
 
-        if (onError) {
+        if (effectiveOnError) {
           try {
             return await executeRoute(wrapped, extracted.data);
           } catch (error) {
-            return onError(error, request);
+            return effectiveOnError(error, request);
           }
         }
 
@@ -92,6 +94,10 @@ export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
     const parameters = (route as InternalRoute)[routeParametersSymbol];
     if (parameters) {
       (wrapped as InternalRoute)[routeParametersSymbol] = parameters;
+    }
+
+    if (effectiveOnError) {
+      (wrapped as InternalRoute)[routeOnErrorSymbol] = effectiveOnError;
     }
 
     return wrapped;

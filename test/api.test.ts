@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { api, routeResponsesSymbol } from "../src/api.js";
 import { requestSymbol } from "../src/context.js";
+import { createRouter } from "../src/router.js";
 
 function req(method: string, url: string, options?: RequestInit) {
   return new Request(`http://localhost${url}`, { method, ...options });
@@ -515,6 +516,31 @@ describe("cookie params", () => {
     );
     expect(await res.json()).toEqual({ token: "a=b=c" });
   });
+
+  it("parses cookie edge cases: empty value, name-only, value containing equals", async () => {
+    const route2 = api(
+      { method: "GET", path: "/c" },
+      async (params: { a?: unknown; b?: unknown; c?: unknown; d?: unknown }) => ({
+        a: params.a,
+        b: params.b,
+        c: params.c,
+        d: params.d,
+      }),
+    );
+
+    const app = createRouter([route2]);
+    const res = await app(
+      new Request("http://x/c", {
+        headers: {
+          cookie: "a=; b; c=x=y=z; d=ok",
+        },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.d).toBe("ok");
+  });
 });
 
 // ── 参数合并优先级 ──
@@ -558,6 +584,30 @@ describe("param merge priority (path > body > query > cookie > header)", () => {
       }),
     );
     expect(await res.json()).toEqual({ token: "from-query" });
+  });
+
+  it("resolves parameter priority as path > body > query > cookie > header for same name", async () => {
+    const route2 = api(
+      { method: "POST", path: "/p/:item" },
+      async (params: { item: unknown }) => ({ from: params.item }),
+    );
+
+    const app = createRouter([route2]);
+
+    const res = await app(
+      new Request("http://x/p/from-path?item=from-query", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: "item=from-cookie",
+          item: "from-header",
+        },
+        body: JSON.stringify({ item: "from-body" }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ from: "from-path" });
   });
 });
 
@@ -617,6 +667,26 @@ describe("handler return values", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/octet-stream");
     expect(await res.text()).toBe("chunk-1");
+  });
+
+  it("converts bare ReadableStream handler return to octet-stream response", async () => {
+    const route = api(
+      { method: "GET", path: "/raw" },
+      async () =>
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("hello"));
+            controller.close();
+          },
+        }),
+    );
+
+    const app = createRouter([route]);
+    const res = await app(new Request("http://x/raw"));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/octet-stream");
+    expect(await res.text()).toBe("hello");
   });
 
   it("returns AsyncIterable as sse response", async () => {

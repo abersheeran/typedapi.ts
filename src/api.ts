@@ -24,6 +24,7 @@ type HandlerResult<THandler> = THandler extends RouteHandler<unknown, infer TRes
 export const routeValidateSymbol = Symbol("routeValidate");
 export const routeResponsesSymbol = Symbol("routeResponses");
 export const routeParametersSymbol = Symbol("routeParameters");
+export const routeOnErrorSymbol = Symbol("routeOnError");
 
 type ExtractedParams =
   | { ok: true; data: Record<string, unknown> }
@@ -33,6 +34,7 @@ type InternalRoute = Route<any, any> & {
   [routeParametersSymbol]?: unknown;
   [routeValidateSymbol]?: Validate<unknown>;
   [routeResponsesSymbol]?: unknown;
+  [routeOnErrorSymbol]?: (error: unknown, request: Request) => Response | Promise<Response>;
 };
 
 export function api<THandler extends (...args: any[]) => any>(

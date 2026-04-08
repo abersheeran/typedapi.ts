@@ -142,4 +142,123 @@ describe("transform", () => {
     expect(output).not.toContain("Should Skip");
     expect(output).not.toContain('name: "auth"');
   });
+
+  it("extracts JsonResponse<204, {}, null> as a no-content response", () => {
+    const output = compile(`
+      import { JsonResponse, api } from "$IMPORT_PATH$";
+
+      api(
+        { method: "DELETE", path: "/items/:id" },
+        async (_params: {}): Promise<JsonResponse<204, {}, null>> => null,
+      );
+    `);
+
+    expect(output).toContain("responses:");
+    expect(output).toContain("status: 204");
+  });
+
+  it("preserves null-body union members when extracting responses", () => {
+    const output = compile(`
+      import { JsonResponse, api, json } from "$IMPORT_PATH$";
+
+      api(
+        { method: "POST", path: "/items" },
+        async (
+          _params: {},
+        ): Promise<
+          JsonResponse<201, {}, { id: number }> | JsonResponse<204, {}, null>
+        > => json({ id: 1 }, 201),
+      );
+    `);
+
+    expect(output).toContain("status: 201");
+    expect(output).toContain("status: 204");
+  });
+
+  it("extracts JsonResponse<204, {}, undefined> as a no-content response", () => {
+    const output = compile(`
+      import { JsonResponse, api } from "$IMPORT_PATH$";
+
+      api(
+        { method: "DELETE", path: "/items/:id" },
+        async (_params: {}): Promise<JsonResponse<204, {}, undefined>> => undefined,
+      );
+    `);
+
+    expect(output).toContain("status: 204");
+  });
+
+  it("extracts JsonResponse<304, {}, void> as a no-content response", () => {
+    const output = compile(`
+      import { JsonResponse, api } from "$IMPORT_PATH$";
+
+      api(
+        { method: "GET", path: "/cached" },
+        async (_params: {}): Promise<JsonResponse<304, {}, void>> => {
+          return;
+        },
+      );
+    `);
+
+    expect(output).toContain("status: 304");
+  });
+
+  it("does not inject parameters when handler has no param type annotation", () => {
+    const output = compile(`
+      import { api } from "$IMPORT_PATH$";
+
+      api(
+        { method: "GET", path: "/users/:id" },
+        async (p: any) => ({ id: p.id }),
+      );
+    `);
+
+    expect(output).not.toContain("parameters:");
+  });
+
+  it("extracts metadata for nullable query parameters", () => {
+    const output = compile(`
+      import { Query, api } from "$IMPORT_PATH$";
+
+      api(
+        { method: "GET", path: "/search" },
+        async (_params: {
+          q: Query<string | null, { title: "Search term" }>;
+        }) => ({ ok: true }),
+      );
+    `);
+
+    expect(output).toContain("parameters:");
+    expect(output).toContain('name: "q"');
+    expect(output).toContain('in: "query"');
+    expect(output).toContain('title: "Search term"');
+  });
+
+  it("extracts all Meta fields (title, description, alias, example, deprecated)", () => {
+    const output = compile(`
+      import { Query, api } from "$IMPORT_PATH$";
+
+      api(
+        { method: "GET", path: "/items" },
+        async (_params: {
+          q: Query<
+            string,
+            {
+              title: "Search";
+              description: "Search term";
+              alias: "query";
+              example: "hello";
+              deprecated: true;
+            }
+          >;
+        }) => ({ ok: true }),
+      );
+    `);
+
+    expect(output).toContain('title: "Search"');
+    expect(output).toContain('description: "Search term"');
+    expect(output).toContain('name: "query"');
+    expect(output).toContain('example: "hello"');
+    expect(output).toContain("deprecated: true");
+  });
 });

@@ -66,6 +66,16 @@ describe("json()", () => {
     const res = json(undefined);
     expect(await res.text()).toBe("null");
   });
+
+  it("appends multi-value headers as comma-joined for non-set-cookie keys", () => {
+    const res = json(
+      { ok: true },
+      200,
+      { "cache-control": ["no-cache", "no-store"] },
+    );
+
+    expect(res.headers.get("cache-control")).toBe("no-cache, no-store");
+  });
 });
 
 describe("html()", () => {

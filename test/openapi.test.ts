@@ -340,6 +340,33 @@ describe("openapi", () => {
     });
   });
 
+  it("emits 204 responses without a content key for null body", () => {
+    const route = api(
+      { method: "DELETE", path: "/items/:id", expose: true },
+      async () => null,
+      {
+        responses: {
+          __responses: [
+            {
+              status: 204,
+              headers: {},
+              schema: {},
+            },
+          ],
+        },
+      },
+    );
+
+    const document = openapi({
+      info: { title: "Test", version: "1.0.0" },
+      routes: [route],
+    });
+
+    const deleteOp = document.paths["/items/{id}"].delete;
+    expect(deleteOp.responses["204"]).toBeDefined();
+    expect(deleteOp.responses["204"].content).toBeUndefined();
+  });
+
   it("uses grouped route paths after prefix composition", () => {
     const [route] = routes(
       { prefix: "/api" },

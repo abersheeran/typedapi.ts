@@ -69,12 +69,21 @@ export type JsonResponse<
   Status extends number = 200,
   Headers extends Record<string, string | string[]> = {},
   Body = unknown,
-> = Body & {
-  readonly __response?: {
-    readonly status: Status;
-    readonly headers: Headers;
-  };
-};
+> = [Body] extends [null | undefined | void]
+  ? Body | {
+      readonly __response?: {
+        readonly status: Status;
+        readonly headers: Headers;
+        readonly body: Body;
+      };
+    }
+  : Body & {
+      readonly __response?: {
+        readonly status: Status;
+        readonly headers: Headers;
+        readonly body: Body;
+      };
+    };
 
 export type HtmlResponse<
   Status extends number = 200,

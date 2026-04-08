@@ -180,6 +180,49 @@ describe("routes validation passthrough", () => {
       parameters,
     );
   });
+
+  it("validate still runs end-to-end when wrapped by routes()", async () => {
+    const validate = (input: unknown) => {
+      const n = (input as { n?: unknown })?.n;
+      if (typeof n === "number") {
+        return { success: true, data: { n } } as const;
+      }
+      return {
+        success: false,
+        errors: [{ path: "n", expected: "number", value: n }],
+      } as const;
+    };
+
+    const [wrapped] = routes(
+      { prefix: "/api" },
+      api(
+        { method: "POST", path: "/x" },
+        async (params: { n: number }) => ({ n: params.n }),
+        { validate: validate as any },
+      ),
+    );
+
+    const app = createRouter([wrapped]);
+
+    const valid = await app(
+      new Request("http://x/api/x", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ n: 7 }),
+      }),
+    );
+    expect(valid.status).toBe(200);
+    expect(await valid.json()).toEqual({ n: 7 });
+
+    const invalid = await app(
+      new Request("http://x/api/x", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ n: "nope" }),
+      }),
+    );
+    expect(invalid.status).toBe(400);
+  });
 });
 
 // ── 嵌套 routes ──
