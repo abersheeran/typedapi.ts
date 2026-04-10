@@ -37,18 +37,21 @@ export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
       ...new Set([...(config.tags ?? []), ...(routeTags ?? [])]),
     ];
     const matchPath = createPathMatcher(path);
+    const matchUrlPath = (url: URL): RouteMatch | null => {
+      const match = matchPath(url.pathname);
+      if (!match) {
+        return null;
+      }
+
+      return { params: match.params, url };
+    };
     const matchRequest = (request: Request, url?: URL): RouteMatch | null => {
       if (request.method !== method) {
         return null;
       }
 
       const parsed = url ?? new URL(request.url);
-      const match = matchPath(parsed.pathname);
-      if (!match) {
-        return null;
-      }
-
-      return { params: match.params, url: parsed };
+      return matchUrlPath(parsed);
     };
     const existingOnError = (route as InternalRoute)[routeOnErrorSymbol];
     const effectiveOnError = existingOnError ?? config.onError;
@@ -64,6 +67,9 @@ export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
       handler: route.handler,
       match(request, url) {
         return matchRequest(request, url);
+      },
+      matchPath(url) {
+        return matchUrlPath(url);
       },
       async handle(request, matched) {
         const routeMatch = matched ?? matchRequest(request);

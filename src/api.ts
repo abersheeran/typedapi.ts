@@ -57,18 +57,21 @@ export function api<THandler extends (...args: any[]) => any>(
   const inject = "inject" in options ? options.inject : undefined;
   const method = config.method.toUpperCase();
   const matchPath = createPathMatcher(config.path);
+  const matchUrlPath = (url: URL): RouteMatch | null => {
+    const match = matchPath(url.pathname);
+    if (!match) {
+      return null;
+    }
+
+    return { params: match.params, url };
+  };
   const matchRequest = (request: Request, url?: URL): RouteMatch | null => {
     if (request.method !== method) {
       return null;
     }
 
     const parsed = url ?? new URL(request.url);
-    const match = matchPath(parsed.pathname);
-    if (!match) {
-      return null;
-    }
-
-    return { params: match.params, url: parsed };
+    return matchUrlPath(parsed);
   };
 
   const route: Route<HandlerParams<THandler>, HandlerResult<THandler>> = {
@@ -76,6 +79,9 @@ export function api<THandler extends (...args: any[]) => any>(
     handler: handler as RouteHandler<HandlerParams<THandler>, HandlerResult<THandler>>,
     match(request, url) {
       return matchRequest(request, url);
+    },
+    matchPath(url) {
+      return matchUrlPath(url);
     },
     async handle(request, matched) {
       const routeMatch = matched ?? matchRequest(request);

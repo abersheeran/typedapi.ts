@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   api,
+  cors,
   createRouter,
   routes,
   type AnyRoute,
@@ -8,6 +9,7 @@ import {
   type JsonResponse,
   type Path,
   type Query,
+  type RouterMiddleware,
 } from "../src/index.js";
 
 const getUser = api(
@@ -42,11 +44,16 @@ const grouped = routes(
   searchUsers,
 );
 const router2 = createRouter(grouped);
+const routerMiddleware: RouterMiddleware = async (_request, next) => next();
+const router3 = createRouter([getUser], {
+  middlewares: [routerMiddleware, cors()],
+});
 
 describe("Route container typing", () => {
   it("compiles with heterogeneous Route params", () => {
     expect(typeof router1).toBe("function");
     expect(typeof router2).toBe("function");
+    expect(typeof router3).toBe("function");
     expect(routeList.length).toBe(3);
   });
 });

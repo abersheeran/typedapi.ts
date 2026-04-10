@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { api } from "../src/api.js";
 import { cors } from "../src/cors.js";
+import { createRouter } from "../src/router.js";
 
 function req(method: string, url: string, options?: RequestInit) {
   return new Request(`http://localhost${url}`, { method, ...options });
@@ -9,14 +10,15 @@ function req(method: string, url: string, options?: RequestInit) {
 describe("cors middleware", () => {
   it("adds default allow origin header to non-preflight responses", async () => {
     const route = api(
-      { method: "GET", path: "/items", middlewares: [cors()] },
+      { method: "GET", path: "/items" },
       async () =>
         new Response("ok", {
           headers: { "content-type": "text/plain; charset=utf-8" },
         }),
     );
+    const app = createRouter([route], { middlewares: [cors()] });
 
-    const res = await route.handle(
+    const res = await app(
       req("GET", "/items", {
         headers: { Origin: "https://example.com" },
       }),
@@ -33,21 +35,23 @@ describe("cors middleware", () => {
       {
         method: "GET",
         path: "/items",
-        middlewares: [
-          cors({
-            origin: ["https://allowed.example"],
-            credentials: true,
-            exposeHeaders: ["x-total-count", "x-request-id"],
-          }),
-        ],
       },
       async () =>
         new Response("ok", {
           headers: { Vary: "Accept-Encoding" },
         }),
     );
+    const app = createRouter([route], {
+      middlewares: [
+        cors({
+          origin: ["https://allowed.example"],
+          credentials: true,
+          exposeHeaders: ["x-total-count", "x-request-id"],
+        }),
+      ],
+    });
 
-    const res = await route.handle(
+    const res = await app(
       req("GET", "/items", {
         headers: { Origin: "https://allowed.example" },
       }),
@@ -63,25 +67,35 @@ describe("cors middleware", () => {
     expect(res.headers.get("Vary")).toBe("Accept-Encoding, Origin");
   });
 
-  it("returns preflight response with echoed request headers by default", async () => {
+  it("adds CORS headers onto the router-generated preflight response", async () => {
     let called = false;
-    const middleware = cors({
-      origin: (origin) => origin.endsWith(".example"),
-      methods: ["GET", "POST"],
-      maxAge: 600,
+    const route = api({ method: "POST", path: "/items" }, async () => {
+      called = true;
+      return { ok: true };
+    });
+    const app = createRouter([route], {
+      middlewares: [
+        cors({
+          origin: (origin) => origin.endsWith(".example"),
+          methods: ["GET", "POST"],
+          maxAge: 600,
+        }),
+      ],
     });
 
-    const res = await middleware(async () => {
-      called = true;
-      return new Response("ok");
-    })({
-      origin: "https://api.example",
-      "access-control-request-method": "POST",
-      "access-control-request-headers": "content-type, x-api-key",
-    });
+    const res = await app(
+      req("OPTIONS", "/items", {
+        headers: {
+          Origin: "https://api.example",
+          "Access-Control-Request-Method": "POST",
+          "Access-Control-Request-Headers": "content-type, x-api-key",
+        },
+      }),
+    );
 
     expect(called).toBe(false);
     expect(res.status).toBe(204);
+    expect(res.headers.get("Allow")).toBe("POST, OPTIONS");
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe(
       "https://api.example",
     );
@@ -94,16 +108,27 @@ describe("cors middleware", () => {
   });
 
   it("returns false allow origin when request origin is not allowed", async () => {
-    const res = await cors({
-      origin: ["https://allowed.example"],
-      allowHeaders: ["content-type", "x-api-key"],
-    })(async () => new Response("ok"))({
-      origin: "https://blocked.example",
-      "access-control-request-method": "POST",
-      "access-control-request-headers": "x-ignored",
+    const route = api({ method: "POST", path: "/items" }, async () => ({ ok: true }));
+    const app = createRouter([route], {
+      middlewares: [
+        cors({
+          origin: ["https://allowed.example"],
+          allowHeaders: ["content-type", "x-api-key"],
+        }),
+      ],
     });
+    const res = await app(
+      req("OPTIONS", "/items", {
+        headers: {
+          Origin: "https://blocked.example",
+          "Access-Control-Request-Method": "POST",
+          "Access-Control-Request-Headers": "x-ignored",
+        },
+      }),
+    );
 
     expect(res.status).toBe(204);
+    expect(res.headers.get("Allow")).toBe("POST, OPTIONS");
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe("false");
     expect(res.headers.get("Access-Control-Allow-Headers")).toBe(
       "content-type, x-api-key",

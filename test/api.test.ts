@@ -101,6 +101,14 @@ describe("path matching", () => {
     expect(match?.url).toBe(url);
   });
 
+  it("matchPath ignores method and reuses provided URL", () => {
+    const request = req("POST", "/users/1?from=query");
+    const url = new URL(request.url);
+    const match = route.matchPath(url);
+    expect(match?.params).toEqual({ id: 1 });
+    expect(match?.url).toBe(url);
+  });
+
   it("match returns null on wrong method", () => {
     expect(route.match(req("POST", "/users/1"))).toBeNull();
   });

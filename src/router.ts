@@ -1,11 +1,16 @@
 import { handleError } from "./api.js";
-import type { AnyRoute } from "./types.js";
+import type { AnyRoute, RouterMiddleware } from "./types.js";
 
-export function createRouter(routes: AnyRoute[]) {
-  const index = new Map<
-    string,
-    { staticMap: Map<string, AnyRoute>; dynamic: AnyRoute[] }
-  >();
+interface RouteBucket {
+  staticMap: Map<string, AnyRoute>;
+  dynamic: AnyRoute[];
+}
+
+export function createRouter(
+  routes: AnyRoute[],
+  options?: { middlewares?: RouterMiddleware[] },
+) {
+  const index = new Map<string, RouteBucket>();
 
   for (const route of routes) {
     const method = route.config.method.toUpperCase();
@@ -27,36 +32,131 @@ export function createRouter(routes: AnyRoute[]) {
     bucket.dynamic.push(route);
   }
 
-  return async (request: Request): Promise<Response> => {
+  const coreHandler = async (request: Request): Promise<Response> => {
+    const url = new URL(request.url);
+    const pathname = normalizePath(url.pathname);
+
+    if (request.method === "OPTIONS") {
+      const optionsBucket = index.get("OPTIONS");
+      if (optionsBucket) {
+        const response = await dispatchBucket(
+          optionsBucket,
+          request,
+          pathname,
+          url,
+        );
+        if (response) {
+          return response;
+        }
+      }
+
+      const allow = collectAllowedMethods(index, pathname, url);
+      if (allow.length === 0) {
+        return notFound();
+      }
+
+      return noContent(allow);
+    }
+
     const bucket = index.get(request.method);
     if (!bucket) {
       return notFound();
     }
 
-    const url = new URL(request.url);
-    const pathname = normalizePath(url.pathname);
-
-    try {
-      const staticRoute = bucket.staticMap.get(pathname);
-      if (staticRoute) {
-        return await staticRoute.handle(request, { params: {}, url });
-      }
-
-      for (const route of bucket.dynamic) {
-        const match = route.match(request, url);
-        if (match) {
-          return await route.handle(
-            request,
-            match.url ? match : { ...match, url },
-          );
-        }
-      }
-    } catch (error) {
-      return handleError(error);
+    const response = await dispatchBucket(bucket, request, pathname, url);
+    if (response) {
+      return response;
     }
 
     return notFound();
   };
+
+  let handler = coreHandler;
+  const middlewares = options?.middlewares ?? [];
+
+  for (let index = middlewares.length - 1; index >= 0; index -= 1) {
+    const middleware = middlewares[index];
+    if (!middleware) {
+      continue;
+    }
+
+    const next = handler;
+    handler = (request) =>
+      Promise.resolve().then(() => middleware(request, () => next(request)));
+  }
+
+  return async (request: Request): Promise<Response> => {
+    try {
+      return await handler(request);
+    } catch (error) {
+      return handleError(error);
+    }
+  };
+}
+
+export function composeHandlers(
+  ...handlers: Array<(request: Request) => Promise<Response>>
+): (request: Request) => Promise<Response> {
+  return async (request) => {
+    for (const handler of handlers) {
+      const response = await handler(request);
+      if (response.status !== 404) {
+        return response;
+      }
+    }
+
+    return notFound();
+  };
+}
+
+async function dispatchBucket(
+  bucket: RouteBucket,
+  request: Request,
+  pathname: string,
+  url: URL,
+): Promise<Response | null> {
+  const staticRoute = bucket.staticMap.get(pathname);
+  if (staticRoute) {
+    return staticRoute.handle(request, { params: {}, url });
+  }
+
+  for (const route of bucket.dynamic) {
+    const match = route.match(request, url);
+    if (match) {
+      return route.handle(
+        request,
+        match.url ? match : { ...match, url },
+      );
+    }
+  }
+
+  return null;
+}
+
+function collectAllowedMethods(
+  index: Map<string, RouteBucket>,
+  pathname: string,
+  url: URL,
+): string[] {
+  const allow = new Set<string>();
+
+  for (const [method, bucket] of index) {
+    if (bucket.staticMap.has(pathname)) {
+      allow.add(method);
+      continue;
+    }
+
+    if (bucket.dynamic.some((route) => route.matchPath(url))) {
+      allow.add(method);
+    }
+  }
+
+  if (allow.size === 0) {
+    return [];
+  }
+
+  allow.add("OPTIONS");
+  return [...allow];
 }
 
 function isStaticPath(path: string): boolean {
@@ -88,6 +188,15 @@ function notFound(): Response {
     status: 404,
     headers: {
       "content-type": "application/json; charset=utf-8",
+    },
+  });
+}
+
+function noContent(allow: string[]): Response {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      Allow: allow.join(", "),
     },
   });
 }

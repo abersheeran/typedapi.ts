@@ -17,7 +17,7 @@ export {
   text,
 } from "./response.js";
 export { routes } from "./routes.js";
-export { createRouter } from "./router.js";
+export { composeHandlers, createRouter } from "./router.js";
 export type { OpenAPIConfig } from "./openapi.js";
 export type { CorsOptions } from "./cors.js";
 export type { CookieOptions, HeaderValues } from "./response.js";
@@ -39,6 +39,7 @@ export type {
   Route,
   RouteConfig,
   RouteHandler,
+  RouterMiddleware,
   RouteMatch,
   SseResponse,
   StreamResponse,

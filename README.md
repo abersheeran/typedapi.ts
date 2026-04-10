@@ -73,6 +73,8 @@ When handler params include `Inject<typeof dependency>` fields, wrap the handler
 
 `createRouter()` returns the standard `(request: Request) => Promise<Response>` signature, so you can deploy it to Cloudflare Workers by exporting it directly:
 
+It also answers `OPTIONS` requests automatically: explicit `OPTIONS` routes are dispatched first, and only unmatched `OPTIONS` requests fall back to `204 No Content` with an `Allow` header listing the matched methods plus `OPTIONS`. Pass `{ middlewares }` as the second argument when you need router-level middleware that wraps the entire dispatch flow.
+
 ```typescript
 import { api, createRouter } from "typedapi.ts";
 
@@ -684,32 +686,34 @@ const protectedRoutes = routes(
 );
 ```
 
+For concerns that must run before route matching or automatic `OPTIONS` handling, use router-level middleware via `createRouter(routes, { middlewares })`. Router middleware signature: `(request, next) => Response | Promise<Response>`.
+
 ### CORS
 
 ```typescript
 import { api, createRouter, cors, routes } from "typedapi.ts";
 
 const health = api(
-  { method: "GET", path: "/health", middlewares: [cors()] },
+  { method: "GET", path: "/health" },
   async () => ({ status: "ok" }),
 );
 
-const apiRoutes = routes(
-  {
-    prefix: "/api",
-    middlewares: [
-      cors({
-        origin: ["https://app.example.com"],
-        credentials: true,
-        maxAge: 3600,
-      }),
-    ],
-  },
-  health,
-);
+const apiRoutes = routes({ prefix: "/api" }, health);
 
-export default createRouter(apiRoutes);
+export default createRouter(apiRoutes, {
+  middlewares: [
+    cors({
+      origin: ["https://app.example.com"],
+      credentials: true,
+      maxAge: 3600,
+    }),
+  ],
+});
 ```
+
+`cors()` is a router-level middleware. Use it with `createRouter(..., { middlewares: [cors()] })`, not `api({ middlewares })` or `routes({ middlewares })`.
+
+It does not short-circuit preflight requests. `createRouter()` still produces the `204` preflight response and `Allow` header, and `cors()` always calls `next()` before appending CORS headers onto the response.
 
 `CorsOptions` configuration:
 
@@ -721,6 +725,26 @@ export default createRouter(apiRoutes);
 | `exposeHeaders` | `string[]` | — | Response headers exposed to the browser |
 | `credentials` | `boolean` | — | Whether credentials are allowed |
 | `maxAge` | `number` | — | Number of seconds to cache preflight responses |
+
+### Compose Routers
+
+```typescript
+import { composeHandlers, cors, createRouter } from "typedapi.ts";
+
+const publicApi = createRouter([...publicRoutes], {
+  middlewares: [cors({ origin: "*" })],
+});
+
+const internalApi = createRouter([...internalRoutes], {
+  middlewares: [cors({ origin: "https://admin.example.com" })],
+});
+
+const app = composeHandlers(publicApi, internalApi);
+
+export default app;
+```
+
+`composeHandlers(...handlers)` tries each handler in order and returns the first response whose status is not `404`. If none match, it returns the framework's standard JSON `404 Not Found` response.
 
 ### Error Handling
 

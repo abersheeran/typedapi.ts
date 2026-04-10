@@ -129,6 +129,11 @@ export type Middleware = (
   next: () => Promise<Response>,
 ) => (params: Record<string, unknown>) => Response | Promise<Response>;
 
+export type RouterMiddleware = (
+  request: Request,
+  next: () => Promise<Response>,
+) => Response | Promise<Response>;
+
 export interface RouteConfig {
   method: string;
   path: string;
@@ -171,6 +176,7 @@ export interface Route<TParams = unknown, TResult = unknown> {
   config: RouteConfig;
   handler: RouteHandler<TParams, TResult>;
   match(request: Request, url?: URL): RouteMatch | null;
+  matchPath(url: URL): RouteMatch | null;
   handle(request: Request, match?: RouteMatch): Promise<Response>;
 }
 

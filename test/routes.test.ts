@@ -74,6 +74,22 @@ describe("routes with prefix", () => {
     expect(await res.json()).toEqual({ id: 42 });
   });
 
+  it("grouped dynamic routes answer OPTIONS with Allow", async () => {
+    const getUser = api(
+      { method: "GET", path: "/users/:id" },
+      async (p: { id: unknown }) => ({ id: p.id }),
+    );
+    const updateUser = api(
+      { method: "PUT", path: "/users/:id" },
+      async (p: { id: unknown }) => ({ id: p.id }),
+    );
+
+    const app = createRouter(routes({ prefix: "/api/v1" }, getUser, updateUser));
+    const res = await app(req("OPTIONS", "/api/v1/users/42"));
+    expect(res.status).toBe(204);
+    expect(res.headers.get("Allow")).toBe("GET, PUT, OPTIONS");
+  });
+
   it("treats empty prefix the same as no prefix", async () => {
     const getUsers = api(
       { method: "GET", path: "/users" },

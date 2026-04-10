@@ -4,7 +4,7 @@ import { HttpError } from "../src/error.js";
 import { inject } from "../src/inject.js";
 import { createRouter } from "../src/router.js";
 import { routes } from "../src/routes.js";
-import type { Middleware } from "../src/types.js";
+import type { Middleware, RouterMiddleware } from "../src/types.js";
 
 function req(method: string, url: string) {
   return new Request(`http://localhost${url}`, { method });
@@ -111,6 +111,32 @@ describe("router default error handling", () => {
     const app = createRouter([
       api({ method: "GET", path: "/mw-crash", middlewares: [broken] }, async () => ({ ok: true })),
     ]);
+    const res = await app(req("GET", "/mw-crash"));
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ message: "Internal Server Error" });
+  });
+
+  it("router middleware HttpError → controlled response", async () => {
+    const auth: RouterMiddleware = async () => {
+      throw new HttpError(401, "Token expired");
+    };
+    const app = createRouter(
+      [api({ method: "GET", path: "/protected" }, async () => ({ secret: 42 }))],
+      { middlewares: [auth] },
+    );
+    const res = await app(req("GET", "/protected"));
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ message: "Token expired" });
+  });
+
+  it("router middleware plain Error → 500", async () => {
+    const broken: RouterMiddleware = async () => {
+      throw new Error("router middleware broke");
+    };
+    const app = createRouter(
+      [api({ method: "GET", path: "/mw-crash" }, async () => ({ ok: true }))],
+      { middlewares: [broken] },
+    );
     const res = await app(req("GET", "/mw-crash"));
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ message: "Internal Server Error" });

@@ -8,7 +8,8 @@
 
 - 通过 `api(config, handler, validate?)` 或 `api(config, handler, { validate, responses, parameters })` 声明路由；`validate` 的类型为 `Validate<RequestParams<HandlerParams<T>>>`
 - 通过 `middleware(handler, { responses, parameters }?)` 声明带文档元数据的 typed middleware
-- 通过 `cors(options?)` 声明不携带 OpenAPI 元数据的 CORS middleware
+- 通过 `cors(options?)` 声明不携带 OpenAPI 元数据的 router 级 CORS middleware；始终调用 `next()`，并根据是否为 preflight 在响应上追加对应的 CORS 头
+- 通过 `RouterMiddleware` 定义 router 级中间件，签名为 `(request, next) => Response | Promise<Response>`
 - 通过 `routes(config, ...items)` 聚合路由并叠加 prefix / middlewares
 - 通过 `Path<T, Meta>` 标记 path 参数
 - 通过 `Query<T, Meta>` 标记 query 参数
@@ -22,7 +23,9 @@
 - 编译时 transformer 会从 handler 参数类型中识别 `Inject<typeof X>` 模式，自动提取 injectable 变量引用并注入到 `api()` 的 `inject` 配置中
 - 通过 `JsonResponse<Status, Headers, Body>` 标记 handler 返回类型
 - 通过 `HtmlResponse` / `TextResponse` / `StreamResponse` / `SseResponse` 标记非 JSON 响应
-- 通过 `createRouter(routes)` 生成标准 `(request: Request) => Promise<Response>` 处理函数
+- 通过 `createRouter(routes, { middlewares? })` 生成标准 `(request: Request) => Promise<Response>` 处理函数，并支持 router 级 middleware 包裹整个 handler
+- 通过 `composeHandlers(...handlers)` 顺序组合多个 `(request: Request) => Promise<Response>` handler，首个非 `404` 响应胜出
+- `createRouter(routes, { middlewares? })` 在 `OPTIONS` 请求上会优先尝试命中显式注册的 `OPTIONS` 路由；仅当没有对应 method bucket 或显式 `OPTIONS` 路由未命中 path 时，才会自动返回 `204 No Content` 并写入包含已注册 method 与 `OPTIONS` 的 `Allow` header；未命中 path 时仍返回 `404`
 - 通过 `openapi({ info, routes, servers })` 从暴露路由生成 OpenAPI 3.1 文档
 - `RouteConfig` 支持 OpenAPI operation 元数据：`tags` / `summary` / `description` / `operationId` / `deprecated` / `externalDocs`；`routes({ tags })` 会将组级 tags 与子路由 tags 合并去重，`openapi()` 会将这些字段输出到 operation object
 - `RouteConfig` 支持声明式 `middlewares`
@@ -48,12 +51,15 @@
 - 参数合并优先级为 `path > body > query > cookie > header`
 - 提供可选的运行时参数校验，校验失败返回 `400`
 - 支持 route 级与 route-group 级 middleware，执行顺序为外层到内层再到 handler
+- 支持 router 级 middleware，执行顺序为外层到内层再到路由分发；其包裹范围包含显式 `OPTIONS` 路由与自动生成的 `OPTIONS` 响应
 - 命中 route 后的执行顺序为 `middleware 外层 → validate → inject → handler → middleware 内层`，`validate` 失败直接返回 `400` 且不会触发 `inject`
-- 支持可配置的 CORS middleware，处理普通请求与 preflight 请求头写入
+- 支持可配置的 router 级 CORS middleware；始终透传到下游 handler，再对普通请求与 preflight 响应补写对应 CORS 头
+- 支持通过 `composeHandlers(...handlers)` 组合多个 router 或 handler，按顺序尝试，首个非 `404` 响应胜出
 - handler 返回值自动转换为响应：`Response` 透传，`null` 转为 `204`，`string` 转为文本响应，`ReadableStream` 转为二进制流响应，`AsyncIterable` 转为 SSE，其余值转为 JSON 响应
 - `JsonResponse` 使用字符串键 `__response` 暴露状态码与响应头元数据，便于 schema 生成工具读取
 - query 与 path 参数按 JSON 标量规则尝试解析，无法解析时保持字符串
 - `route.handle(request)` 与 `route.match(request)` 使用一致的 `method + path` 命中规则
+- route 对象额外暴露 `matchPath(url)`，用于仅按 path 判断是否命中而不校验 method
 - 命中路由时可复用单次解析出的 URL，避免在匹配与参数提取阶段重复解析
 - JSON body 仅接受对象，数组与原始值视为无效请求
 - `routes()` 支持 prefix 叠加与 middleware 叠加，且不修改原始 route
@@ -83,5 +89,6 @@
 - 自定义 transformer（`transform.cjs`）必须在 `typia/lib/transform` 之前运行，并直接使用 TypeScript type checker 生成参数元数据字面量
 - 由于 `typia` transformer 无法在框架内部解析泛型参数，validator 必须在 `api()` 调用点基于具体类型创建并传入
 - Router 需按 HTTP method 建立索引，并优先以 O(1) 方式命中静态 path，再回退到动态 path 扫描
+- `OPTIONS` 请求会先尝试 `OPTIONS` method 桶中的显式路由；仅在未命中时才遍历所有 method 桶按 path 收集允许的方法
 
 ## 暂不包含
