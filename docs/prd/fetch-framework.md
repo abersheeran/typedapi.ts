@@ -23,8 +23,8 @@
 - 编译时 transformer 会从 handler 参数类型中识别 `Inject<typeof X>` 模式，自动提取 injectable 变量引用并注入到 `api()` 的 `inject` 配置中
 - 通过 `JsonResponse<Status, Headers, Body>` 标记 handler 返回类型
 - 通过 `HtmlResponse` / `TextResponse` / `StreamResponse` / `SseResponse` 标记非 JSON 响应
-- 通过 `createRouter(routes, { middlewares?, onError? })` 生成标准 `(request: Request) => Promise<Response>` 处理函数，并支持 router 级 middleware 包裹整个 handler，以及 router 级 `onError(error, request)` 兜底错误处理
-- 通过 `composeHandlers(...handlers)` 顺序组合多个 `(request: Request) => Promise<Response>` handler，首个非 `404` 响应胜出
+- 通过 `createRouter<T>(routes, { middlewares?, onError? })` 生成标准 `(request: Request, context?: T) => Promise<Response>` 处理函数，并支持 router 级 middleware 包裹整个 handler，以及 router 级 `onError(error, request)` 兜底错误处理
+- 通过 `composeHandlers<T>(...handlers)` 顺序组合多个 `(request: Request, context?: T) => Promise<Response>` handler，首个非 `404` 响应胜出
 - `createRouter(routes, { middlewares? })` 在 `OPTIONS` 请求上会优先尝试命中显式注册的 `OPTIONS` 路由；仅当没有对应 method bucket 或显式 `OPTIONS` 路由未命中 path 时，才会自动返回 `204 No Content` 并写入包含已注册 method 与 `OPTIONS` 的 `Allow` header；未命中 path 时仍返回 `404`
 - 通过 `openapi({ info, routes, servers })` 从暴露路由生成 OpenAPI 3.1 文档
 - `RouteConfig` 支持 OpenAPI operation 元数据：`tags` / `summary` / `description` / `operationId` / `deprecated` / `externalDocs`；`routes({ tags })` 会将组级 tags 与子路由 tags 合并去重，`openapi()` 会将这些字段输出到 operation object
@@ -42,7 +42,7 @@
 - 框架导出 `handleError` 作为默认 `HttpError` 处理函数，供自定义 `onError` 中作为 fallback 使用；`onError` 自身抛出的异常也会按相同规则处理，遇到非 `HttpError` 时继续抛出
 - 通过 `redirect(url, status?)` 构造重定向响应，handler 返回 `URL` 对象时自动转换为 `307` 重定向
 - 通过 `file(path, options?)` 构造静态文件响应，自动推断 MIME type，跨运行时兼容
-- 通过 `requestSymbol` 和 `RequestContext` 在 handler 中访问原始 `Request` 对象
+- 通过 handler 第二个参数 `{ request, context }` 在 handler、route 级中间件和 inject 函数中访问原始 `Request` 对象和自定义上下文
 
 ## 本次范围
 
@@ -78,7 +78,7 @@
 - `redirect(url, status?)` 支持 string 和 URL 参数，默认状态码 `302`
 - `file(path, options?)` 支持自动 MIME type 推断，兼容 Bun 和 Node.js 运行时
 - `json()` / `html()` / `text()` / `stream()` / `sse()` / `file()` 的 `headers` 支持 `string` 与 `string[]`，同名 header 会按追加语义写入；仅在调用方未设置时才补默认 `content-type`
-- `extractParams` 注入 `requestSymbol` 到 params 中，handler 可通过 `params[requestSymbol]` 访问原始 `Request`
+- handler、route 级中间件和 inject 函数通过第二个参数 `{ request, context }` 访问原始 `Request` 和自定义上下文
 - form body（`application/x-www-form-urlencoded` 和 `multipart/form-data`）自动解析，字符串字段尝试 `parseScalar`，`File` 保持原对象，重复 key 聚合为数组
 - `cookie(name, value, options?)` 使用 `encodeURIComponent` 编码 name / value 并序列化 `Domain`、`Path`、`Max-Age`、`Expires`、`HttpOnly`、`SameSite`、`Secure`、`Partitioned`；`sameSite: "None"` 时自动附加 `Secure`
 - `clearCookie(name, options?)` 基于 `cookie()` 生成删除 cookie 的 `Set-Cookie` 值，固定写入 `Max-Age=0` 与 `Expires=Thu, 01 Jan 1970 00:00:00 GMT`

@@ -1,8 +1,10 @@
+import type { HandlerContext } from "./context.js";
+
 type InjectableGenerator<T> = AsyncGenerator<T, void, unknown>;
 type InjectableParams = Record<string, unknown>;
 type InjectableFn<T> =
-  | ((params: InjectableParams) => Promise<T>)
-  | ((params: InjectableParams) => InjectableGenerator<T>);
+  | ((params: InjectableParams, ctx: HandlerContext) => Promise<T>)
+  | ((params: InjectableParams, ctx: HandlerContext) => InjectableGenerator<T>);
 
 export const injectableParametersSymbol = Symbol("injectableParameters");
 export const injectableResponsesSymbol = Symbol("injectableResponses");
@@ -31,11 +33,11 @@ export function inject<T>(
   options?: { cache?: boolean; parameters?: unknown; responses?: unknown },
 ): Injectable<T>;
 export function inject<T>(
-  fn: (params: InjectableParams) => Promise<T>,
+  fn: (params: InjectableParams, ctx: HandlerContext) => Promise<T>,
   options?: { cache?: boolean; parameters?: unknown; responses?: unknown },
 ): Injectable<T>;
 export function inject<T>(
-  fn: (params: InjectableParams) => InjectableGenerator<T>,
+  fn: (params: InjectableParams, ctx: HandlerContext) => InjectableGenerator<T>,
   options?: { cache?: boolean; parameters?: unknown; responses?: unknown },
 ): Injectable<T>;
 export function inject<T>(
@@ -65,7 +67,8 @@ type ResolvedValues<T extends Record<string, Injectable<any>>> = {
 
 export async function resolveInjectables<T extends Record<string, Injectable<any>>>(
   injectables: T,
-  params?: InjectableParams,
+  params: InjectableParams,
+  ctx: HandlerContext,
 ): Promise<{
   values: ResolvedValues<T>;
   cleanup: () => Promise<void>;
@@ -85,7 +88,7 @@ export async function resolveInjectables<T extends Record<string, Injectable<any
         continue;
       }
 
-      const result = injectable.fn(params ?? {});
+      const result = injectable.fn(params, ctx);
       let value: unknown;
 
       if (isAsyncGenerator(result)) {

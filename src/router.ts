@@ -6,13 +6,13 @@ interface RouteBucket {
   dynamic: AnyRoute[];
 }
 
-export function createRouter(
+export function createRouter<T = unknown>(
   routes: AnyRoute[],
   options?: {
     middlewares?: RouterMiddleware[];
     onError?: (error: unknown, request: Request) => Response | Promise<Response>;
   },
-) {
+): (request: Request, context?: T) => Promise<Response> {
   const index = new Map<string, RouteBucket>();
   const middlewares = options?.middlewares ?? [];
   const onError = options?.onError;
@@ -37,7 +37,10 @@ export function createRouter(
     bucket.dynamic.push(route);
   }
 
-  const coreHandler = async (request: Request): Promise<Response> => {
+  const coreHandler = async (
+    request: Request,
+    context?: T,
+  ): Promise<Response> => {
     const url = new URL(request.url);
     const pathname = normalizePath(url.pathname);
 
@@ -49,6 +52,7 @@ export function createRouter(
           request,
           pathname,
           url,
+          context,
         );
         if (response) {
           return response;
@@ -68,7 +72,7 @@ export function createRouter(
       return notFound();
     }
 
-    const response = await dispatchBucket(bucket, request, pathname, url);
+    const response = await dispatchBucket(bucket, request, pathname, url, context);
     if (response) {
       return response;
     }
@@ -85,13 +89,15 @@ export function createRouter(
     }
 
     const next = handler;
-    handler = (request) =>
-      Promise.resolve().then(() => middleware(request, () => next(request)));
+    handler = (request, context) =>
+      Promise.resolve().then(() =>
+        middleware(request, () => next(request, context)),
+      );
   }
 
-  return async (request: Request): Promise<Response> => {
+  return async (request: Request, context?: T): Promise<Response> => {
     try {
-      return await handler(request);
+      return await handler(request, context);
     } catch (error) {
       if (onError) {
         try {
@@ -106,12 +112,14 @@ export function createRouter(
   };
 }
 
-export function composeHandlers(
-  ...handlers: Array<(request: Request) => Promise<Response>>
-): (request: Request) => Promise<Response> {
-  return async (request) => {
+export function composeHandlers<T = unknown>(
+  ...handlers: Array<
+    (request: Request, context?: T) => Promise<Response>
+  >
+): (request: Request, context?: T) => Promise<Response> {
+  return async (request, context) => {
     for (const handler of handlers) {
-      const response = await handler(request);
+      const response = await handler(request, context);
       if (response.status !== 404) {
         return response;
       }
@@ -126,10 +134,11 @@ async function dispatchBucket(
   request: Request,
   pathname: string,
   url: URL,
+  context?: unknown,
 ): Promise<Response | null> {
   const staticRoute = bucket.staticMap.get(pathname);
   if (staticRoute) {
-    return staticRoute.handle(request, { params: {}, url });
+    return staticRoute.handle(request, { params: {}, url }, context);
   }
 
   for (const route of bucket.dynamic) {
@@ -138,6 +147,7 @@ async function dispatchBucket(
       return route.handle(
         request,
         match.url ? match : { ...match, url },
+        context,
       );
     }
   }

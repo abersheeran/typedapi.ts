@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { api, routeResponsesSymbol } from "../src/api.js";
-import { requestSymbol } from "../src/context.js";
 import { createRouter } from "../src/router.js";
 
 function req(method: string, url: string, options?: RequestInit) {
@@ -743,11 +742,10 @@ describe("handler return values", () => {
 });
 
 describe("request context", () => {
-  it("exposes request url and method via requestSymbol", async () => {
+  it("exposes request and context via second argument", async () => {
     const route = api(
       { method: "POST", path: "/context" },
-      async (p: { [requestSymbol]: Request }) => {
-        const request = p[requestSymbol];
+      async (_p, { request }) => {
         return {
           url: request.url,
           method: request.method,

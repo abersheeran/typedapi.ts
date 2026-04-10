@@ -57,7 +57,7 @@ const health = api({ method: "GET", path: "/health" }, async () => {
 export default createRouter([health]);
 ```
 
-`createRouter()` returns a standard `(request: Request) => Promise<Response>` handler, so it fits Workers-style and Fetch-based runtimes directly. Use the second argument for router-wide behavior such as `{ middlewares, onError }`.
+`createRouter<T>()` returns a `(request: Request, context?: T) => Promise<Response>` handler, so it fits Workers-style and Fetch-based runtimes directly. Handlers, middleware, and inject functions receive `{ request, context }` as a second argument. Use the second argument of `createRouter` for router-wide behavior such as `{ middlewares, onError }`.
 
 ## Core Rules
 
@@ -76,7 +76,7 @@ Parameter merge precedence is:
 
 `path > body > query > cookie > header`
 
-Use `requestSymbol` and `RequestContext` only when the raw `Request` is actually needed.
+Access the raw `Request` and custom context via the handler's second argument `{ request, context }`.
 
 ```ts
 import { api, Path, Query, Json } from "typedapi.ts";
@@ -265,6 +265,16 @@ const getUser = api(
     return params.db.query("SELECT * FROM users WHERE id = $1", [params.id]);
   },
 );
+```
+
+Access custom context via the second argument:
+
+```ts
+import { inject, type HandlerContext } from "typedapi.ts";
+
+const db = inject(async (_params, { context }: HandlerContext<Env>) => {
+  return context.DB;
+});
 ```
 
 Notes:

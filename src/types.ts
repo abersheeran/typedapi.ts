@@ -1,3 +1,4 @@
+import type { HandlerContext } from "./context.js";
 import type { Injectable } from "./inject.js";
 
 declare const htmlResponseSymbol: unique symbol;
@@ -127,7 +128,10 @@ export type SseResponse<
 
 export type Middleware = (
   next: () => Promise<Response>,
-) => (params: Record<string, unknown>) => Response | Promise<Response>;
+) => (
+  params: Record<string, unknown>,
+  ctx: HandlerContext,
+) => Response | Promise<Response>;
 
 export type RouterMiddleware = (
   request: Request,
@@ -170,6 +174,7 @@ export type Validate<T> = (
 
 export type RouteHandler<TParams = unknown, TResult = unknown> = (
   params: TParams,
+  ctx: HandlerContext,
 ) => TResult | Promise<TResult>;
 
 export interface Route<TParams = unknown, TResult = unknown> {
@@ -177,7 +182,11 @@ export interface Route<TParams = unknown, TResult = unknown> {
   handler: RouteHandler<TParams, TResult>;
   match(request: Request, url?: URL): RouteMatch | null;
   matchPath(url: URL): RouteMatch | null;
-  handle(request: Request, match?: RouteMatch): Promise<Response>;
+  handle(
+    request: Request,
+    match?: RouteMatch,
+    context?: unknown,
+  ): Promise<Response>;
 }
 
 export type AnyRoute = Route<any, any>;

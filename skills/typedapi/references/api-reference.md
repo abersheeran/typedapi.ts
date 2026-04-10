@@ -9,6 +9,7 @@ Load this file when you need concrete typedapi.ts examples or exact public API p
 - Basic router and CRUD routes
 - Parameter wrappers
 - Request context
+- Custom context
 - Response auto-conversion
 - Response helpers
 - Cookie helpers
@@ -62,8 +63,7 @@ Framework and utility types:
 
 - `Middleware`
 - `HttpError`
-- `RequestContext`
-- `requestSymbol`
+- `HandlerContext`
 - `Validate<T>`
 - `RequestParams<T>`
 - `Route`
@@ -109,7 +109,7 @@ The transformer extracts OpenAPI parameter and response metadata from handler ty
 
 ## Basic Router And CRUD Routes
 
-`createRouter()` returns a standard fetch-style request handler. Use the second argument for router-wide behavior such as `{ middlewares, onError }`.
+`createRouter<T>()` returns a `(request: Request, context?: T) => Promise<Response>` handler. Use the second argument for router-wide behavior such as `{ middlewares, onError }`.
 
 ```ts
 import { api, createRouter, Json, JsonResponse, Path } from "typedapi.ts";
@@ -322,26 +322,65 @@ export default createRouter([submitForm]);
 
 ## Request Context
 
-Use `requestSymbol` when you need the raw `Request`.
+Access the raw `Request` via the handler's second argument:
 
 ```ts
-import {
-  api,
-  createRouter,
-  requestSymbol,
-  type RequestContext,
-} from "typedapi.ts";
+import { api, createRouter } from "typedapi.ts";
 
 const info = api(
   { method: "GET", path: "/info" },
-  async (params: { [requestSymbol]: RequestContext }) => {
-    const req = params[requestSymbol];
-    return { url: req.url, method: req.method };
+  async (_params, { request }) => {
+    return { url: request.url, method: request.method };
   },
 );
 
 export default createRouter([info]);
 ```
+
+## Custom Context
+
+Pass custom context as the second argument to the router handler. Specify the type via the generic on `createRouter<T>()`:
+
+```ts
+import { api, createRouter, type HandlerContext } from "typedapi.ts";
+
+interface Env {
+  DB: D1Database;
+}
+
+const getUser = api(
+  { method: "GET", path: "/user/:id" },
+  async (params, { context }: HandlerContext<Env>) => {
+    const user = await context.DB.prepare("SELECT * FROM users WHERE id = ?").first();
+    return user;
+  },
+);
+
+const handler = createRouter<Env>([getUser]);
+
+// Cloudflare Workers
+export default {
+  fetch(request: Request, env: Env) {
+    return handler(request, env);
+  },
+};
+```
+
+### Using context in inject
+
+```ts
+import { inject, type HandlerContext } from "typedapi.ts";
+
+interface Env {
+  DB: D1Database;
+}
+
+const db = inject(async (_params, { context }: HandlerContext<Env>) => {
+  return context.DB;
+});
+```
+
+`{ request, context }` is available as the second argument to handlers, route-level middleware inner functions, and inject functions.
 
 ## Response Auto-Conversion
 

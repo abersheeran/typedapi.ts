@@ -72,7 +72,7 @@ export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
       matchPath(url) {
         return matchUrlPath(url);
       },
-      async handle(request, matched) {
+      async handle(request, matched, context) {
         const routeMatch = matched ?? matchRequest(request);
         if (!routeMatch) {
           return jsonResponse({ message: "Not Found" }, 404);
@@ -89,7 +89,7 @@ export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
 
         if (effectiveOnError) {
           try {
-            return await executeRoute(wrapped, extracted.data);
+            return await executeRoute(wrapped, extracted.data, request, context);
           } catch (error) {
             try {
               return await effectiveOnError(error, request);
@@ -99,7 +99,7 @@ export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
           }
         }
 
-        return executeRoute(wrapped, extracted.data);
+        return executeRoute(wrapped, extracted.data, request, context);
       },
     };
 

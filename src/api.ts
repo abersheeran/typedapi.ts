@@ -1,6 +1,6 @@
 import { HttpError } from "./error.js";
-import { requestSymbol } from "./context.js";
 import { resolveInjectables } from "./inject.js";
+import type { HandlerContext } from "./context.js";
 import type { Injectable } from "./inject.js";
 import type {
   Middleware,
@@ -83,7 +83,7 @@ export function api<THandler extends (...args: any[]) => any>(
     matchPath(url) {
       return matchUrlPath(url);
     },
-    async handle(request, matched) {
+    async handle(request, matched, context) {
       const routeMatch = matched ?? matchRequest(request);
       if (!routeMatch) {
         return jsonResponse({ message: "Not Found" }, 404);
@@ -98,7 +98,7 @@ export function api<THandler extends (...args: any[]) => any>(
         return jsonResponse({ message: extracted.message }, 400);
       }
 
-      return executeRoute(route, extracted.data);
+      return executeRoute(route, extracted.data, request, context);
     },
   };
 
@@ -171,7 +171,6 @@ export async function extractParams(
   return {
     ok: true,
     data: {
-      [requestSymbol]: request,
       ...headers,
       ...cookies,
       ...query,
@@ -331,8 +330,11 @@ function isJsonScalar(input: unknown): input is string | number | boolean | null
 export async function executeRoute(
   route: Route<any, any>,
   params: Record<string, unknown>,
+  request: Request,
+  context: unknown,
 ): Promise<Response> {
   let cleanup: (() => Promise<void>) | undefined;
+  const ctx: HandlerContext = { request, context };
   const middlewares = route.config.middlewares ?? [];
   const validate = (route as InternalRoute)[routeValidateSymbol];
   const injectConfig = route.config.inject;
@@ -352,16 +354,16 @@ export async function executeRoute(
       }
 
       if (injectConfig && Object.keys(injectConfig).length > 0) {
-        const resolved = await resolveInjectables(injectConfig, currentParams);
+        const resolved = await resolveInjectables(injectConfig, currentParams, ctx);
         Object.assign(currentParams, resolved.values);
         cleanup = resolved.cleanup;
       }
 
-      const result = await handler(currentParams);
+      const result = await handler(currentParams, ctx);
       return toResponse(result);
     };
 
-    return await runMiddlewares(middlewares, params, innerHandler);
+    return await runMiddlewares(middlewares, params, ctx, innerHandler);
   } finally {
     if (cleanup) await cleanup();
   }
@@ -370,6 +372,7 @@ export async function executeRoute(
 function runMiddlewares(
   middlewares: Middleware[],
   params: Record<string, unknown>,
+  ctx: HandlerContext,
   innerHandler: (params: Record<string, unknown>) => Promise<Response>,
 ): Promise<Response> {
   let chain = innerHandler;
@@ -382,7 +385,7 @@ function runMiddlewares(
 
     const next = chain;
     chain = (currentParams) =>
-      Promise.resolve(middleware(() => next(currentParams))(currentParams));
+      Promise.resolve(middleware(() => next(currentParams))(currentParams, ctx));
   }
 
   return chain(params);

@@ -71,7 +71,7 @@ When handler params include `Inject<typeof dependency>` fields, wrap the handler
 
 ## Start the Server
 
-`createRouter()` returns the standard `(request: Request) => Promise<Response>` signature, so you can deploy it to Cloudflare Workers by exporting it directly:
+`createRouter<T>()` returns a `(request: Request, context?: T) => Promise<Response>` handler. The optional `context` is passed to handlers, middleware, and inject functions as part of the second argument `{ request, context }`:
 
 It also answers `OPTIONS` requests automatically: explicit `OPTIONS` routes are dispatched first, and only unmatched `OPTIONS` requests fall back to `204 No Content` with an `Allow` header listing the matched methods plus `OPTIONS`. Pass `{ middlewares, onError }` as the second argument when you need router-level middleware or app-wide error handling that wraps the entire dispatch flow.
 
@@ -82,7 +82,14 @@ const health = api({ method: "GET", path: "/health" }, async () => {
   return { status: "ok" };
 });
 
-export default createRouter([health]);
+const handler = createRouter<Env>([health]);
+
+// Cloudflare Workers
+export default {
+  fetch(request: Request, env: Env) {
+    return handler(request, env);
+  },
+};
 ```
 
 ## Usage
@@ -294,18 +301,62 @@ Supports `application/x-www-form-urlencoded` and `multipart/form-data`. In multi
 
 ### Request Context
 
+Access the raw `Request` and custom context via the handler's second argument:
+
 ```typescript
-import { api, createRouter, requestSymbol, type RequestContext } from "typedapi.ts";
+import { api, createRouter } from "typedapi.ts";
 
 const info = api(
   { method: "GET", path: "/info" },
-  async (params: { [requestSymbol]: RequestContext }) => {
-    const req = params[requestSymbol];
-    return { url: req.url, method: req.method };
+  async (_params, { request }) => {
+    return { url: request.url, method: request.method };
   },
 );
 
 export default createRouter([info]);
+```
+
+### Custom Context
+
+Pass custom context (e.g. Cloudflare Workers `env`) as the second argument to the router handler. Specify the type via the generic on `createRouter<T>()`:
+
+```typescript
+import { api, createRouter, type HandlerContext } from "typedapi.ts";
+
+interface Env {
+  DB: D1Database;
+}
+
+const getUser = api(
+  { method: "GET", path: "/user/:id" },
+  async (params, { context }: HandlerContext<Env>) => {
+    const user = await context.DB.prepare("SELECT * FROM users WHERE id = ?").first();
+    return user;
+  },
+);
+
+const handler = createRouter<Env>([getUser]);
+
+// Cloudflare Workers
+export default {
+  fetch(request: Request, env: Env) {
+    return handler(request, env);
+  },
+};
+```
+
+#### Using context in inject
+
+```typescript
+import { inject, type HandlerContext } from "typedapi.ts";
+
+interface Env {
+  DB: D1Database;
+}
+
+const db = inject(async (_params, { context }: HandlerContext<Env>) => {
+  return context.DB;
+});
 ```
 
 ### Automatic Response Conversion

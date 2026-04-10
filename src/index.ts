@@ -1,6 +1,5 @@
 export { api, handleError } from "./api.js";
 export { cors } from "./cors.js";
-export { requestSymbol } from "./context.js";
 export { HttpError } from "./error.js";
 export { inject } from "./inject.js";
 export { middleware } from "./middleware.js";
@@ -20,8 +19,8 @@ export { routes } from "./routes.js";
 export { composeHandlers, createRouter } from "./router.js";
 export type { OpenAPIConfig } from "./openapi.js";
 export type { CorsOptions } from "./cors.js";
+export type { HandlerContext } from "./context.js";
 export type { CookieOptions, HeaderValues } from "./response.js";
-export type { RequestContext } from "./context.js";
 export type {
   AnyRoute,
   Cookie,
