@@ -70,26 +70,23 @@ describe("router default error handling", () => {
     expect(await res.text()).toBe("");
   });
 
-  it("plain Error → 500", async () => {
+  it("plain Error → rethrow", async () => {
+    const error = new Error("database failed");
     const app = createRouter([
       api({ method: "GET", path: "/crash" }, async () => {
-        throw new Error("database failed");
+        throw error;
       }),
     ]);
-    const res = await app(req("GET", "/crash"));
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ message: "Internal Server Error" });
+    await expect(app(req("GET", "/crash"))).rejects.toBe(error);
   });
 
-  it("non-Error throw → 500", async () => {
+  it("non-Error throw → rethrow", async () => {
     const app = createRouter([
       api({ method: "GET", path: "/throw-string" }, async () => {
         throw "oops";
       }),
     ]);
-    const res = await app(req("GET", "/throw-string"));
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ message: "Internal Server Error" });
+    await expect(app(req("GET", "/throw-string"))).rejects.toBe("oops");
   });
 
   it("middleware HttpError → controlled response", async () => {
@@ -104,16 +101,15 @@ describe("router default error handling", () => {
     expect(await res.json()).toEqual({ message: "Token expired" });
   });
 
-  it("middleware plain Error → 500", async () => {
+  it("middleware plain Error → rethrow", async () => {
+    const error = new Error("middleware broke");
     const broken: Middleware = (_next) => async () => {
-      throw new Error("middleware broke");
+      throw error;
     };
     const app = createRouter([
       api({ method: "GET", path: "/mw-crash", middlewares: [broken] }, async () => ({ ok: true })),
     ]);
-    const res = await app(req("GET", "/mw-crash"));
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ message: "Internal Server Error" });
+    await expect(app(req("GET", "/mw-crash"))).rejects.toBe(error);
   });
 
   it("router middleware HttpError → controlled response", async () => {
@@ -129,17 +125,100 @@ describe("router default error handling", () => {
     expect(await res.json()).toEqual({ message: "Token expired" });
   });
 
-  it("router middleware plain Error → 500", async () => {
+  it("router middleware plain Error → rethrow", async () => {
+    const error = new Error("router middleware broke");
     const broken: RouterMiddleware = async () => {
-      throw new Error("router middleware broke");
+      throw error;
     };
     const app = createRouter(
       [api({ method: "GET", path: "/mw-crash" }, async () => ({ ok: true }))],
       { middlewares: [broken] },
     );
-    const res = await app(req("GET", "/mw-crash"));
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ message: "Internal Server Error" });
+    await expect(app(req("GET", "/mw-crash"))).rejects.toBe(error);
+  });
+});
+
+describe("createRouter() custom onError", () => {
+  it("uses custom onError for handler errors", async () => {
+    let receivedPath = "";
+    const app = createRouter(
+      [
+        api({ method: "GET", path: "/boom" }, async () => {
+          throw new Error("handler failed");
+        }),
+      ],
+      {
+        onError: (error, request) => {
+          receivedPath = new URL(request.url).pathname;
+          return new Response(
+            JSON.stringify({ source: "router", message: (error as Error).message }),
+            { status: 503, headers: { "content-type": "application/json" } },
+          );
+        },
+      },
+    );
+
+    const res = await app(req("GET", "/boom"));
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ source: "router", message: "handler failed" });
+    expect(receivedPath).toBe("/boom");
+  });
+
+  it("uses custom onError for router middleware errors", async () => {
+    const broken: RouterMiddleware = async () => {
+      throw new Error("router middleware failed");
+    };
+    const app = createRouter(
+      [api({ method: "GET", path: "/mw-boom" }, async () => ({ ok: true }))],
+      {
+        middlewares: [broken],
+        onError: (error, request) =>
+          new Response(`${request.method}:${(error as Error).message}`, {
+            status: 502,
+          }),
+      },
+    );
+
+    const res = await app(req("GET", "/mw-boom"));
+    expect(res.status).toBe(502);
+    expect(await res.text()).toBe("GET:router middleware failed");
+  });
+
+  it("converts HttpError thrown by custom onError into a response", async () => {
+    const app = createRouter(
+      [
+        api({ method: "GET", path: "/boom" }, async () => {
+          throw new Error("handler failed");
+        }),
+      ],
+      {
+        onError: async () => {
+          throw new HttpError(429, "rate limited");
+        },
+      },
+    );
+
+    const res = await app(req("GET", "/boom"));
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ message: "rate limited" });
+  });
+
+  it("rethrows non-HttpError when custom onError throws", async () => {
+    const onErrorFailed = new Error("onError failed");
+    const app = createRouter(
+      [
+        api({ method: "GET", path: "/boom" }, async () => {
+          throw new Error("handler failed");
+        }),
+      ],
+      {
+        onError: async () => {
+          throw onErrorFailed;
+        },
+      },
+    );
+
+    await expect(app(req("GET", "/boom"))).rejects.toBe(onErrorFailed);
   });
 });
 
@@ -199,6 +278,53 @@ describe("routes() custom onError", () => {
     const res = await app(req("GET", "/err"));
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ custom: true, status: 404 });
+  });
+
+  it("handleError fallback in onError rethrows non-HttpError", async () => {
+    const error = new Error("unknown");
+    const apiRoutes = routes(
+      {
+        onError: (caught) => handleError(caught),
+      },
+      api({ method: "GET", path: "/rethrow" }, async () => {
+        throw error;
+      }),
+    );
+    const app = createRouter(apiRoutes);
+    await expect(app(req("GET", "/rethrow"))).rejects.toBe(error);
+  });
+
+  it("converts HttpError thrown by routes onError into a response", async () => {
+    const apiRoutes = routes(
+      {
+        onError: async () => {
+          throw new HttpError(429, "group rate limited");
+        },
+      },
+      api({ method: "GET", path: "/group-boom" }, async () => {
+        throw new Error("fail");
+      }),
+    );
+    const app = createRouter(apiRoutes);
+    const res = await app(req("GET", "/group-boom"));
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ message: "group rate limited" });
+  });
+
+  it("rethrows non-HttpError thrown by routes onError", async () => {
+    const onErrorFailed = new Error("group onError failed");
+    const apiRoutes = routes(
+      {
+        onError: async () => {
+          throw onErrorFailed;
+        },
+      },
+      api({ method: "GET", path: "/group-rethrow" }, async () => {
+        throw new Error("fail");
+      }),
+    );
+    const app = createRouter(apiRoutes);
+    await expect(app(req("GET", "/group-rethrow"))).rejects.toBe(onErrorFailed);
   });
 
   it("custom onError receives the request object", async () => {
@@ -411,6 +537,7 @@ describe("cleanup runs on error", () => {
 
   it("injectable cleanup runs when handler throws plain Error", async () => {
     const events: string[] = [];
+    const error = new Error("unexpected");
     const resource = inject(async function* () {
       events.push("start");
       yield "resource";
@@ -422,13 +549,12 @@ describe("cleanup runs on error", () => {
         { method: "GET", path: "/clean-err" },
         async () => {
           events.push("handler");
-          throw new Error("unexpected");
+          throw error;
         },
         { inject: { resource } },
       ),
     ]);
-    const res = await app(req("GET", "/clean-err"));
-    expect(res.status).toBe(500);
+    await expect(app(req("GET", "/clean-err"))).rejects.toBe(error);
     expect(events).toEqual(["start", "handler", "cleanup"]);
   });
 });
@@ -477,15 +603,22 @@ describe("handleError()", () => {
     expect(await res.json()).toEqual(body);
   });
 
-  it("returns 500 for plain Error", async () => {
-    const res = handleError(new Error("unexpected"));
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ message: "Internal Server Error" });
+  it("throws plain Error as-is", () => {
+    expect.assertions(1);
+    const error = new Error("unexpected");
+    try {
+      handleError(error);
+    } catch (caught) {
+      expect(caught).toBe(error);
+    }
   });
 
-  it("returns 500 for non-Error values", async () => {
-    const res = handleError("string error");
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ message: "Internal Server Error" });
+  it("throws non-Error values as-is", () => {
+    expect.assertions(1);
+    try {
+      handleError("string error");
+    } catch (caught) {
+      expect(caught).toBe("string error");
+    }
   });
 });

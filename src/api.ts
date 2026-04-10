@@ -429,5 +429,5 @@ export function handleError(error: unknown): Response {
   if (error instanceof HttpError) {
     return errorResponse(error);
   }
-  return jsonResponse({ message: "Internal Server Error" }, 500);
+  throw error;
 }

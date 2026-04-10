@@ -8,9 +8,14 @@ interface RouteBucket {
 
 export function createRouter(
   routes: AnyRoute[],
-  options?: { middlewares?: RouterMiddleware[] },
+  options?: {
+    middlewares?: RouterMiddleware[];
+    onError?: (error: unknown, request: Request) => Response | Promise<Response>;
+  },
 ) {
   const index = new Map<string, RouteBucket>();
+  const middlewares = options?.middlewares ?? [];
+  const onError = options?.onError;
 
   for (const route of routes) {
     const method = route.config.method.toUpperCase();
@@ -72,7 +77,6 @@ export function createRouter(
   };
 
   let handler = coreHandler;
-  const middlewares = options?.middlewares ?? [];
 
   for (let index = middlewares.length - 1; index >= 0; index -= 1) {
     const middleware = middlewares[index];
@@ -89,6 +93,14 @@ export function createRouter(
     try {
       return await handler(request);
     } catch (error) {
+      if (onError) {
+        try {
+          return await onError(error, request);
+        } catch (onErrorError) {
+          return handleError(onErrorError);
+        }
+      }
+
       return handleError(error);
     }
   };

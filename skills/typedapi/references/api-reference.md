@@ -109,7 +109,7 @@ The transformer extracts OpenAPI parameter and response metadata from handler ty
 
 ## Basic Router And CRUD Routes
 
-`createRouter()` returns a standard fetch-style request handler.
+`createRouter()` returns a standard fetch-style request handler. Use the second argument for router-wide behavior such as `{ middlewares, onError }`.
 
 ```ts
 import { api, createRouter, Json, JsonResponse, Path } from "typedapi.ts";
@@ -760,31 +760,27 @@ When the transformer is enabled, `middleware()` can contribute parameter and res
 
 ## CORS
 
-Use `cors()` as middleware on a route or a route group:
+Use `cors()` as router middleware via `createRouter(..., { middlewares: [cors()] })`:
 
 ```ts
 import { api, createRouter, cors, routes } from "typedapi.ts";
 
 const health = api(
-  { method: "GET", path: "/health", middlewares: [cors()] },
+  { method: "GET", path: "/health" },
   async () => ({ status: "ok" }),
 );
 
-const apiRoutes = routes(
-  {
-    prefix: "/api",
-    middlewares: [
-      cors({
-        origin: ["https://app.example.com"],
-        credentials: true,
-        maxAge: 3600,
-      }),
-    ],
-  },
-  health,
-);
+const apiRoutes = routes({ prefix: "/api" }, health);
 
-export default createRouter(apiRoutes);
+export default createRouter(apiRoutes, {
+  middlewares: [
+    cors({
+      origin: ["https://app.example.com"],
+      credentials: true,
+      maxAge: 3600,
+    }),
+  ],
+});
 ```
 
 `CorsOptions`:
@@ -843,17 +839,43 @@ throw new HttpError(401, "Unauthorized", {
 });
 ```
 
-Unhandled non-`HttpError` exceptions become:
+Unhandled non-`HttpError` exceptions are rethrown to the caller unchanged:
 
-```json
-{ "message": "Internal Server Error" }
+```ts
+throw new Error("database failed");
+// createRouter(...) rejects/throws the same error
 ```
 
-with status `500`.
+### Router-Level `onError`
+
+`createRouter()` supports app-wide error handling with the same `(error, request)` signature as `routes({ onError })`. If the custom `onError` throws, that thrown value is passed through `handleError()`: `HttpError` becomes a response, and everything else bubbles up unchanged.
+
+```ts
+import { api, createRouter, handleError } from "typedapi.ts";
+
+class ValidationError extends Error {}
+
+const createUser = api({ method: "POST", path: "/users" }, async () => {
+  throw new ValidationError("invalid payload");
+});
+
+export default createRouter([createUser], {
+  onError: (error, request) => {
+    if (error instanceof ValidationError) {
+      return Response.json(
+        { message: error.message, path: new URL(request.url).pathname },
+        { status: 422 },
+      );
+    }
+
+    return handleError(error);
+  },
+});
+```
 
 ### Group-Level `onError`
 
-`routes()` supports group-specific error handling. Use `handleError()` as a fallback when you want the framework default behavior for unrecognized exceptions.
+`routes()` supports group-specific error handling. Use it when different route groups need different strategies, and use `handleError()` as a fallback when you want the framework default `HttpError` behavior while letting unrecognized exceptions bubble up. The same rule is applied if a group-level `onError` callback throws.
 
 ```ts
 import { api, routes, createRouter, handleError } from "typedapi.ts";

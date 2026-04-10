@@ -48,12 +48,16 @@ const routerMiddleware: RouterMiddleware = async (_request, next) => next();
 const router3 = createRouter([getUser], {
   middlewares: [routerMiddleware, cors()],
 });
+const router4 = createRouter([getUser], {
+  onError: async (_error, _request) => new Response(null, { status: 500 }),
+});
 
 describe("Route container typing", () => {
   it("compiles with heterogeneous Route params", () => {
     expect(typeof router1).toBe("function");
     expect(typeof router2).toBe("function");
     expect(typeof router3).toBe("function");
+    expect(typeof router4).toBe("function");
     expect(routeList.length).toBe(3);
   });
 });

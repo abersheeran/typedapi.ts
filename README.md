@@ -73,7 +73,7 @@ When handler params include `Inject<typeof dependency>` fields, wrap the handler
 
 `createRouter()` returns the standard `(request: Request) => Promise<Response>` signature, so you can deploy it to Cloudflare Workers by exporting it directly:
 
-It also answers `OPTIONS` requests automatically: explicit `OPTIONS` routes are dispatched first, and only unmatched `OPTIONS` requests fall back to `204 No Content` with an `Allow` header listing the matched methods plus `OPTIONS`. Pass `{ middlewares }` as the second argument when you need router-level middleware that wraps the entire dispatch flow.
+It also answers `OPTIONS` requests automatically: explicit `OPTIONS` routes are dispatched first, and only unmatched `OPTIONS` requests fall back to `204 No Content` with an `Allow` header listing the matched methods plus `OPTIONS`. Pass `{ middlewares, onError }` as the second argument when you need router-level middleware or app-wide error handling that wraps the entire dispatch flow.
 
 ```typescript
 import { api, createRouter } from "typedapi.ts";
@@ -748,7 +748,7 @@ export default app;
 
 ### Error Handling
 
-Throwing `HttpError` in a handler or middleware returns a controlled error response. Any other uncaught exception is automatically converted into `500 Internal Server Error`.
+Throwing `HttpError` in a handler or middleware returns a controlled error response. Any other uncaught exception is rethrown to the caller of `createRouter()` instead of being converted into a framework-generated `500`.
 
 ```typescript
 import { api, createRouter, HttpError, Path } from "typedapi.ts";
@@ -793,19 +793,44 @@ throw new HttpError(401, "Unauthorized", { "WWW-Authenticate": "Bearer" });
 // → 401, { "message": "Unauthorized" }, WWW-Authenticate: Bearer
 ```
 
-Non-`HttpError` exceptions thrown in handlers or middleware return `500` without exposing internal error details:
+Non-`HttpError` exceptions thrown in handlers or middleware are not swallowed by the framework. They propagate to the caller of `createRouter()` unchanged:
 
 ```typescript
 const crashRoute = api(
   { method: "GET", path: "/crash" },
   async () => { throw new Error("database failed"); },
 );
-// → 500, { "message": "Internal Server Error" }
+// → rejects/throws Error("database failed")
 ```
 
 ### Custom Error Handling
 
-`routes()` supports an `onError` option for customizing error handling at the route-group level. Different route groups can use different error-handling strategies:
+`createRouter()` supports an app-wide `onError` option, and `routes()` supports group-specific `onError`. Both callbacks receive `(error, request)`. If a custom `onError` throws, that new error is passed through `handleError()`: `HttpError` becomes a response, and everything else continues to bubble up.
+
+```typescript
+import { api, createRouter, handleError } from "typedapi.ts";
+
+class ValidationError extends Error {}
+
+const createUser = api({ method: "POST", path: "/users" }, async () => {
+  throw new ValidationError("invalid payload");
+});
+
+export default createRouter([createUser], {
+  onError: (error, request) => {
+    if (error instanceof ValidationError) {
+      return Response.json(
+        { message: error.message, path: new URL(request.url).pathname },
+        { status: 422 },
+      );
+    }
+
+    return handleError(error);
+  },
+});
+```
+
+Use `routes({ onError })` when different route groups need different error-handling strategies:
 
 ```typescript
 import { api, routes, createRouter, handleError, HttpError } from "typedapi.ts";
@@ -828,7 +853,7 @@ const apiRoutes = routes(
           { status: 422 },
         );
       }
-      // Fall back to default handling for other errors (HttpError → matching response, others → 500)
+      // Fall back to framework HttpError handling and let unknown errors bubble up
       return handleError(error);
     },
   },
@@ -848,7 +873,7 @@ export default createRouter(apiRoutes);
 | `error` | `unknown` | The captured exception |
 | `request` | `Request` | The current request object |
 
-Route groups without `onError`, as well as standalone routes not included in any `routes()`, are handled by `createRouter`'s default fallback logic (`HttpError` -> corresponding response, everything else -> `500`). `handleError` is exported as the default handler and can be called as a fallback inside custom `onError` implementations.
+Route groups without `onError`, as well as standalone routes not included in any `routes()`, fall through to `createRouter`'s `onError` when one is configured. If `createRouter` also omits `onError`, the default fallback logic applies: `HttpError` becomes the matching response, and everything else is rethrown. `handleError` is exported as the default `HttpError` handler and can be used inside custom `onError` implementations when you want to preserve that behavior. The same `handleError` rule also applies if an `onError` callback itself throws.
 
 ### Dependency Injection
 

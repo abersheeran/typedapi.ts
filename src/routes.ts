@@ -2,6 +2,7 @@ import {
   createPathMatcher,
   executeRoute,
   extractParams,
+  handleError,
   jsonResponse,
   routeOnErrorSymbol,
   routeParametersSymbol,
@@ -90,7 +91,11 @@ export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
           try {
             return await executeRoute(wrapped, extracted.data);
           } catch (error) {
-            return effectiveOnError(error, request);
+            try {
+              return await effectiveOnError(error, request);
+            } catch (onErrorError) {
+              return handleError(onErrorError);
+            }
           }
         }
 

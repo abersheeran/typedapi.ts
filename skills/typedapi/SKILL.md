@@ -57,7 +57,7 @@ const health = api({ method: "GET", path: "/health" }, async () => {
 export default createRouter([health]);
 ```
 
-`createRouter()` returns a standard `(request: Request) => Promise<Response>` handler, so it fits Workers-style and Fetch-based runtimes directly.
+`createRouter()` returns a standard `(request: Request) => Promise<Response>` handler, so it fits Workers-style and Fetch-based runtimes directly. Use the second argument for router-wide behavior such as `{ middlewares, onError }`.
 
 ## Core Rules
 
@@ -186,7 +186,7 @@ Middleware uses the onion model. The signature is:
 
 Use `middleware()` when you want typed reusable middleware that can also contribute OpenAPI metadata.
 
-Use `routes()` to add a common prefix, middleware stack, group-level `tags`, or group-level `onError` handler. Group middleware runs before route-level middleware. Nested `routes()` calls stack prefixes and middleware, and merge group tags ahead of route tags with deduplication.
+Use `createRouter(..., { middlewares, onError })` for router-wide behavior, and `routes()` to add a common prefix, middleware stack, group-level `tags`, or group-level `onError` handler. Group middleware runs before route-level middleware. Nested `routes()` calls stack prefixes and middleware, and merge group tags ahead of route tags with deduplication.
 
 ```ts
 import { api, createRouter, Header, middleware, routes } from "typedapi.ts";
@@ -209,15 +209,19 @@ export default createRouter(
 
 ### CORS
 
-Use `cors()` as route middleware or group middleware. It handles normal responses and preflight requests.
+Use `cors()` as router middleware via `createRouter(..., { middlewares: [cors()] })`. It handles normal responses and preflight requests while letting `createRouter()` keep control of route matching and automatic `OPTIONS` responses.
 
 ```ts
-import { api, cors } from "typedapi.ts";
+import { api, cors, createRouter } from "typedapi.ts";
 
 const health = api(
-  { method: "GET", path: "/health", middlewares: [cors()] },
+  { method: "GET", path: "/health" },
   async () => ({ status: "ok" }),
 );
+
+export default createRouter([health], {
+  middlewares: [cors()],
+});
 ```
 
 ### Error handling
@@ -228,9 +232,9 @@ Throw `HttpError(status, body?, headers?)` for controlled HTTP failures.
 - object `body` is returned as JSON
 - omitted `body` returns an empty response body
 
-Unhandled non-`HttpError` exceptions become `500 Internal Server Error`.
+Unhandled non-`HttpError` exceptions are rethrown to the caller; the framework does not convert them into `500`.
 
-Use `routes({ onError })` for group-specific error handling, and use `handleError()` as the default fallback.
+Use `createRouter(..., { onError })` for app-wide fallback handling and `routes({ onError })` for group-specific strategies. Both receive `(error, request)`. Use `handleError()` when you want the built-in `HttpError` fallback while letting unknown errors bubble up. If an `onError` callback throws, that thrown value is also passed through `handleError()`.
 
 ### Dependency injection
 

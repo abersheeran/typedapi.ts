@@ -23,7 +23,7 @@
 - 编译时 transformer 会从 handler 参数类型中识别 `Inject<typeof X>` 模式，自动提取 injectable 变量引用并注入到 `api()` 的 `inject` 配置中
 - 通过 `JsonResponse<Status, Headers, Body>` 标记 handler 返回类型
 - 通过 `HtmlResponse` / `TextResponse` / `StreamResponse` / `SseResponse` 标记非 JSON 响应
-- 通过 `createRouter(routes, { middlewares? })` 生成标准 `(request: Request) => Promise<Response>` 处理函数，并支持 router 级 middleware 包裹整个 handler
+- 通过 `createRouter(routes, { middlewares?, onError? })` 生成标准 `(request: Request) => Promise<Response>` 处理函数，并支持 router 级 middleware 包裹整个 handler，以及 router 级 `onError(error, request)` 兜底错误处理
 - 通过 `composeHandlers(...handlers)` 顺序组合多个 `(request: Request) => Promise<Response>` handler，首个非 `404` 响应胜出
 - `createRouter(routes, { middlewares? })` 在 `OPTIONS` 请求上会优先尝试命中显式注册的 `OPTIONS` 路由；仅当没有对应 method bucket 或显式 `OPTIONS` 路由未命中 path 时，才会自动返回 `204 No Content` 并写入包含已注册 method 与 `OPTIONS` 的 `Allow` header；未命中 path 时仍返回 `404`
 - 通过 `openapi({ info, routes, servers })` 从暴露路由生成 OpenAPI 3.1 文档
@@ -36,9 +36,10 @@
 - 可通过 `{ validate, responses, parameters }` 启用运行时校验并补充文档元数据；编译时 transformer 默认会直接从 handler 参数类型生成 OpenAPI 参数元数据，并从 `JsonResponse` 返回类型生成响应元数据；调用点显式提供 `parameters` / `responses` 时不覆盖
 - 编译时 transformer 同样会从 `middleware()` handler 返回的 inner handler 参数类型提取 wrapper 元数据并注入 `parameters`，并从 inner handler 返回类型中的 `JsonResponse` brand 提取 `responses`；`openapi()` 会按 middleware 声明顺序收集其 `__entries` / `__body` / `__responses`，再与 route 自身元数据合并，且 route 对同名同位置参数、requestBody 与同状态码 responses 拥有更高优先级
 - 通过 `HttpError(status, body?, headers?)` 在 handler 或 middleware 中抛出受控的 HTTP 错误响应
-- `createRouter` 默认将 `HttpError` 转为对应响应，其他异常转为 `500 Internal Server Error`
+- `createRouter` 在未配置 `onError` 时默认将 `HttpError` 转为对应响应，其他异常直接抛给上层调用者
+- `createRouter` 支持 `onError(error, request)` 作为 router 级错误处理，签名与 `routes()` 的 `onError` 一致
 - `routes()` 支持 `onError` 选项自定义错误处理，不同路由组可以有不同的错误处理逻辑
-- 框架导出 `handleError` 作为默认错误处理函数，供自定义 `onError` 中作为 fallback 使用
+- 框架导出 `handleError` 作为默认 `HttpError` 处理函数，供自定义 `onError` 中作为 fallback 使用；`onError` 自身抛出的异常也会按相同规则处理，遇到非 `HttpError` 时继续抛出
 - 通过 `redirect(url, status?)` 构造重定向响应，handler 返回 `URL` 对象时自动转换为 `307` 重定向
 - 通过 `file(path, options?)` 构造静态文件响应，自动推断 MIME type，跨运行时兼容
 - 通过 `requestSymbol` 和 `RequestContext` 在 handler 中访问原始 `Request` 对象
@@ -70,8 +71,8 @@
 - 支持基于 `Promise` 或 `AsyncGenerator` 的 request-scoped 注入；同一次解析内默认按 Injectable 实例缓存，并在 cleanup 时逆序推进 generator 完成资源释放
 - `inject()` handler 支持 `Path` / `Query` / `Header` / `Cookie` / `Json` 参数类型标注与 `JsonResponse` 响应类型标注，编译时 transformer 自动提取元数据，运行时注入已解析的请求参数，`openapi()` 自动合并 inject 元数据
 - handler 和 middleware 中抛出的 `HttpError(status, body?, headers?)` 会被自动捕获并转换为对应状态码的响应；`body` 为字符串时响应体为 `{ message }` JSON，为对象时原样输出，省略时无响应体
-- handler 和 middleware 中抛出的其他异常会被捕获并返回 `500 Internal Server Error`，不暴露内部错误信息
-- `routes()` 支持 `onError(error, request)` 选项，在路由组级别自定义错误处理；未配置 `onError` 的路由组由 `createRouter` 默认兜底
+- handler 和 middleware 中抛出的其他异常不会被框架吞掉，而是继续抛给上层调用者；如需转为响应，应通过 `routes({ onError })` 或 `createRouter(routes, { onError })` 显式处理
+- `routes()` 支持 `onError(error, request)` 选项，在路由组级别自定义错误处理；未配置 `onError` 的路由组会继续落到 `createRouter` 的 `onError` 或默认兜底逻辑；`createRouter` / `routes()` 的 `onError` 若再次抛出 `HttpError`，也会转为响应，其他异常继续向上冒泡
 - Injectable 的清理逻辑在错误发生时仍然执行
 - handler 返回 `URL` 对象时自动转换为 `307` 重定向响应
 - `redirect(url, status?)` 支持 string 和 URL 参数，默认状态码 `302`
