@@ -276,7 +276,8 @@ module.exports = function (program) {
         const [handler, existingOptions] = node.arguments;
         const hasParameters = hasOptionProperty(existingOptions, "parameters");
         const hasResponses = hasOptionProperty(existingOptions, "responses");
-        if (hasParameters && hasResponses) {
+        const hasInject = hasOptionProperty(existingOptions, "inject");
+        if (hasParameters && hasResponses && hasInject) {
           return node;
         }
 
@@ -304,6 +305,24 @@ module.exports = function (program) {
               factory.createPropertyAssignment(
                 factory.createIdentifier("responses"),
                 toLiteral(metadata),
+              ),
+            );
+          }
+        }
+
+        if (!hasInject) {
+          const injectMetadata = extractInjectMetadata(handler);
+          if (injectMetadata) {
+            const properties = injectMetadata.map(({ paramName, identifier }) =>
+              factory.createPropertyAssignment(
+                factory.createIdentifier(paramName),
+                identifier,
+              ),
+            );
+            injectedProperties.push(
+              factory.createPropertyAssignment(
+                factory.createIdentifier("inject"),
+                factory.createObjectLiteralExpression(properties, true),
               ),
             );
           }

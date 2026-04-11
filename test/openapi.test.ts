@@ -1940,4 +1940,67 @@ describe("openapi", () => {
     expect(op).not.toHaveProperty("deprecated");
     expect(op).not.toHaveProperty("externalDocs");
   });
+
+  describe("nested injectable metadata in OpenAPI", () => {
+    it("collects parameters and responses from injectable dependency chain", () => {
+      const deep = inject(async () => ({ deepValue: 1 }), {
+        parameters: {
+          __entries: [
+            {
+              name: "deep-header",
+              in: "header",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+        },
+        responses: {
+          __responses: [
+            {
+              status: 503,
+              headers: {},
+              schema: { type: "object" },
+            },
+          ],
+        },
+      });
+
+      const shallow = inject(
+        async (_params: { deepValue: number }) => ({ shallowValue: 2 }),
+        {
+          inject: { deep },
+          parameters: {
+            __entries: [
+              {
+                name: "shallow-header",
+                in: "header",
+                required: false,
+                schema: { type: "string" },
+              },
+            ],
+          },
+        },
+      );
+
+      const route = api(
+        { method: "GET", path: "/nested", expose: true },
+        async (params: Record<string, unknown>) => ({ v: params.shallow }),
+        { inject: { shallow } },
+      );
+
+      const document = openapi({
+        info: { title: "Test", version: "1.0.0" },
+        routes: [route],
+      });
+
+      const operation = document.paths["/nested"].get;
+      const parameterNames = operation.parameters.map((parameter: any) => {
+        return parameter.name;
+      });
+
+      expect(parameterNames).toContain("deep-header");
+      expect(parameterNames).toContain("shallow-header");
+      expect(operation.responses).toHaveProperty("503");
+    });
+  });
 });

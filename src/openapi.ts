@@ -2,6 +2,7 @@ import { routeParametersSymbol, routeResponsesSymbol } from "./api.js";
 import {
   injectableParametersSymbol,
   injectableResponsesSymbol,
+  type Injectable,
 } from "./inject.js";
 import {
   middlewareParametersSymbol,
@@ -56,6 +57,26 @@ function buildPathParameters(path: string) {
     required: true,
     schema: { type: "string" },
   }));
+}
+
+function collectInjectableChain(
+  injectable: Injectable<any>,
+  visited: Set<Injectable<any>>,
+): Injectable<any>[] {
+  if (visited.has(injectable)) {
+    return [];
+  }
+  visited.add(injectable);
+
+  const result: Injectable<any>[] = [injectable];
+  const deps = (injectable as { inject?: Record<string, Injectable<any>> }).inject;
+  if (deps) {
+    for (const dep of Object.values(deps)) {
+      result.push(...collectInjectableChain(dep, visited));
+    }
+  }
+
+  return result;
 }
 
 function isJsonSchema(value: unknown): value is JsonSchema {
@@ -611,10 +632,16 @@ export function openapi(config: OpenAPIConfig) {
       }
 
       const mwInjectConfig = mwMeta[middlewareInjectSymbol] as
-        | Record<string, unknown>
+        | Record<string, Injectable<any>>
         | undefined;
       if (mwInjectConfig) {
+        const visited = new Set<Injectable<any>>();
+        const chain: Injectable<any>[] = [];
         for (const injectable of Object.values(mwInjectConfig)) {
+          chain.push(...collectInjectableChain(injectable, visited));
+        }
+
+        for (const injectable of chain) {
           const injectMeta = injectable as unknown as Record<PropertyKey, unknown>;
 
           const injectLiteralParams = readLiteralParameters(
@@ -638,7 +665,14 @@ export function openapi(config: OpenAPIConfig) {
       }
     }
 
-    for (const injectable of Object.values(route.config.inject ?? {})) {
+    const routeInject = route.config.inject ?? {};
+    const routeVisited = new Set<Injectable<any>>();
+    const routeChain: Injectable<any>[] = [];
+    for (const injectable of Object.values(routeInject)) {
+      routeChain.push(...collectInjectableChain(injectable, routeVisited));
+    }
+
+    for (const injectable of routeChain) {
       const injectMeta = injectable as unknown as Record<PropertyKey, unknown>;
 
       const literalParams = readLiteralParameters(

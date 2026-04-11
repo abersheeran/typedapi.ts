@@ -1013,6 +1013,43 @@ const getUser = api(
 export default createRouter([getUser]);
 ```
 
+### Nested injectables
+
+An injectable can depend on other injectables via the `inject` option. Dependencies are resolved first and passed into the dependent injectable's handler via `params`:
+
+```typescript
+import { inject, type Header, type Inject } from "typedapi.ts";
+
+const db = inject(async function* () {
+  const conn = await openDb();
+  try {
+    yield conn;
+  } finally {
+    await conn.close();
+  }
+});
+
+const currentUser = inject(
+  async (params: {
+    authorization: Header<string>;
+    db: Inject<typeof db>;
+  }) => {
+    return params.db.findUser(params.authorization);
+  },
+);
+// With the transformer enabled, the `inject: { db }` option is injected automatically
+// from the `Inject<typeof db>` pattern in the handler parameter type.
+```
+
+Within a single request resolution:
+
+- Shared dependencies are cached by Injectable instance (`cache: true` by default), so a dependency referenced by multiple dependents is resolved only once.
+- Cleanup runs in reverse construction order - dependent injectables clean up before their dependencies.
+- Circular dependencies throw `Error("Circular injectable dependency detected")` at resolve time.
+- Dependency values take priority over same-named request params when merged into the injectable handler's `params`.
+
+Nested injectable metadata (parameters / responses) also flows into the OpenAPI document - all parameters and responses declared along the dependency chain are collected for every route that uses the top-level injectable (directly or via middleware).
+
 ### Compile-Time Parameter Metadata Injection
 
 With `ts-patch` enabled, place the custom transformer before `typia`. At compile time, it directly analyzes the type of the first parameter of an `api()` handler and injects parameter metadata literals into the `parameters` field of `api()`'s third argument; it also analyzes the `JsonResponse` return type and injects response metadata literals into the `responses` field. It also analyzes the type of the first parameter of the inner handler returned by the `middleware()` outer handler, injects parameter metadata literals into the `parameters` field of `middleware()`'s second argument, and extracts response metadata from the inner handler's return type into `responses`. If `parameters` or `responses` are already provided manually, they are not overwritten. The transformer still does not generate `validate`; runtime validators must be passed explicitly.

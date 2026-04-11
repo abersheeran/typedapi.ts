@@ -337,3 +337,204 @@ describe("inject", () => {
     });
   });
 });
+
+describe("injectable dependencies", () => {
+  const createCtx = () => ({
+    request: new Request("http://localhost"),
+    context: undefined,
+  });
+
+  it("resolves dependent injectable and passes it as params", async () => {
+    const base = inject(async () => ({ label: "base-value" }));
+
+    const derived = inject(
+      async (params: { base: { label: string } }) => {
+        return { derivedLabel: `derived:${params.base.label}` };
+      },
+      { inject: { base } },
+    );
+
+    const { values, cleanup } = await resolveInjectables(
+      { derived },
+      {},
+      createCtx(),
+    );
+
+    expect(values.derived).toEqual({ derivedLabel: "derived:base-value" });
+    await cleanup();
+  });
+
+  it("resolves multi-level dependencies in correct order", async () => {
+    const events: string[] = [];
+
+    const level1 = inject(async function* () {
+      events.push("l1:setup");
+      yield { level: 1 };
+      events.push("l1:cleanup");
+    });
+
+    const level2 = inject(
+      async function* (params: { l1: { level: number } }) {
+        events.push("l2:setup");
+        yield { level: 2, parent: params.l1.level };
+        events.push("l2:cleanup");
+      },
+      { inject: { l1: level1 } },
+    );
+
+    const level3 = inject(
+      async function* (params: { l2: { level: number; parent: number } }) {
+        events.push("l3:setup");
+        yield { level: 3, parent: params.l2.level };
+        events.push("l3:cleanup");
+      },
+      { inject: { l2: level2 } },
+    );
+
+    const { values, cleanup } = await resolveInjectables(
+      { l3: level3 },
+      {},
+      createCtx(),
+    );
+
+    expect(values.l3).toEqual({ level: 3, parent: 2 });
+    expect(events).toEqual(["l1:setup", "l2:setup", "l3:setup"]);
+
+    await cleanup();
+
+    expect(events).toEqual([
+      "l1:setup",
+      "l2:setup",
+      "l3:setup",
+      "l3:cleanup",
+      "l2:cleanup",
+      "l1:cleanup",
+    ]);
+  });
+
+  it("shares a dependency across multiple dependents", async () => {
+    let sharedCalls = 0;
+
+    const shared = inject(async () => {
+      sharedCalls += 1;
+      return { id: sharedCalls };
+    });
+
+    const depA = inject(
+      async (params: { shared: { id: number } }) => ({
+        from: "a",
+        sharedId: params.shared.id,
+      }),
+      { inject: { shared } },
+    );
+
+    const depB = inject(
+      async (params: { shared: { id: number } }) => ({
+        from: "b",
+        sharedId: params.shared.id,
+      }),
+      { inject: { shared } },
+    );
+
+    const { values } = await resolveInjectables(
+      { a: depA, b: depB },
+      {},
+      createCtx(),
+    );
+
+    expect(sharedCalls).toBe(1);
+    expect(values.a).toEqual({ from: "a", sharedId: 1 });
+    expect(values.b).toEqual({ from: "b", sharedId: 1 });
+  });
+
+  it("throws on circular dependencies", async () => {
+    const mutableA: any = {
+      __brand: "injectable",
+      fn: async () => ({ name: "a" }),
+      cache: true,
+    };
+    const mutableB: any = {
+      __brand: "injectable",
+      fn: async () => ({ name: "b" }),
+      cache: true,
+      inject: { a: mutableA },
+    };
+    mutableA.inject = { b: mutableB };
+
+    await expect(
+      resolveInjectables({ entry: mutableA }, {}, createCtx()),
+    ).rejects.toThrow("Circular injectable dependency detected");
+  });
+
+  it("merges request params with dependency values", async () => {
+    const dep = inject(async () => ({ depValue: "from-dep" }));
+
+    const consumer = inject(
+      async (params: { userId: string; dep: { depValue: string } }) => {
+        return {
+          user: params.userId,
+          dep: params.dep.depValue,
+        };
+      },
+      { inject: { dep } },
+    );
+
+    const { values } = await resolveInjectables(
+      { result: consumer },
+      { userId: "user-123" },
+      createCtx(),
+    );
+
+    expect(values.result).toEqual({ user: "user-123", dep: "from-dep" });
+  });
+
+  it("runs cleanup for already-built dependencies when a later one throws", async () => {
+    let cleaned = false;
+
+    const good = inject(async function* () {
+      yield "good";
+      cleaned = true;
+    });
+
+    const bad = inject(
+      async (_params: Record<string, unknown>) => {
+        throw new Error("boom");
+      },
+      { inject: { good } },
+    );
+
+    await expect(
+      resolveInjectables({ result: bad }, {}, createCtx()),
+    ).rejects.toThrow("boom");
+
+    expect(cleaned).toBe(true);
+  });
+});
+
+describe("nested injectables through api()", () => {
+  it("handler receives values from injectable with dependencies", async () => {
+    const db = inject(async () => ({ name: "db-instance" }));
+
+    const userService = inject(
+      async (params: { db: { name: string } }) => ({
+        loadUser: () => `user-from-${params.db.name}`,
+      }),
+      { inject: { db } },
+    );
+
+    const route = api(
+      { method: "GET", path: "/me" },
+      async (params: Record<string, unknown>) => {
+        const svc = params.userService as { loadUser: () => string };
+        return { user: svc.loadUser() };
+      },
+      { inject: { userService } },
+    );
+
+    const response = await route.handle(req("GET", "/me"));
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { user: string };
+    expect(body.user).toBe("user-from-db-instance");
+  });
+});

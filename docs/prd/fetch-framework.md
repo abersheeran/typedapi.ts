@@ -19,7 +19,7 @@
 - 通过 `Json<T, Meta>` 标记 JSON body 参数
 - 通过 `Form<T, Meta>` 标记 form body 参数
 - 通过 `inject(fn, options?)` 定义 request-scoped 依赖，在 handler 参数类型中使用 `Inject<typeof injectable>` 标注；编译时 transformer 自动从类型标注提取 inject 配置，运行时框架自动解析注入值并在请求结束后清理
-- 通过在 `inject()` handler 参数类型中使用 `Path<T>` / `Query<T>` / `Header<T>` / `Cookie<T>` / `Json<T>` / `JsonResponse` 标注，编译时 transformer 自动提取参数与响应元数据并注入到 inject 配置中；运行时 inject 函数接收已解析的请求参数；`openapi()` 按 middleware < inject < route 优先级合并 inject 的参数与响应元数据
+- 通过在 `inject()` handler 参数类型中使用 `Path<T>` / `Query<T>` / `Header<T>` / `Cookie<T>` / `Json<T>` / `JsonResponse` / `Inject<typeof other>` 标注，编译时 transformer 自动提取参数、响应、依赖 injectable 元数据并注入到 inject 配置中；运行时 inject 函数接收已解析的请求参数和依赖 injectable 的值（依赖值优先级高于同名请求参数），按 Injectable 实例在同一次解析内缓存，依赖的 cleanup 逆序执行；循环依赖直接抛错；`openapi()` 按 middleware < inject < route 优先级合并 inject 的参数与响应元数据，并递归展开依赖链上的所有 injectable 元数据
 - 编译时 transformer 会直接从 handler 第一个参数类型提取 wrapper 元数据，并注入 `parameters`
 - 编译时 transformer 会从 handler 参数类型中识别 `Inject<typeof X>` 模式，自动提取 injectable 变量引用并注入到 `api()` 的 `inject` 配置中
 - 通过 `JsonResponse<Status, Headers, Body>` 标记 handler 返回类型
@@ -71,6 +71,7 @@
 - `openapi()` 仅收集 `expose: true` 的路由；参数文档优先读取 transformer 直接注入的 `__entries` / `__body` 字面量，字段元数据来自 wrapper 类型第二个泛型参数 `Meta` 中的 `title/description/alias/example/deprecated`，并兼容旧的 typia `ParamsSchema<T>` 输出作为回退；响应文档优先读取 transformer 直接注入的 `__responses` 字面量，并继续兼容手动传入的 `typia.json.schemas()` 输出
 - `api()` 的 handler 泛型约束需兼容 TypeScript `strictFunctionTypes`，允许传入参数类型比默认 `RouteHandler<unknown, unknown>` 更具体的函数签名
 - 支持基于 `Promise` 或 `AsyncGenerator` 的 request-scoped 注入；同一次解析内默认按 Injectable 实例缓存，并在 cleanup 时逆序推进 generator 完成资源释放
+- 支持 injectable 通过 `inject` 选项声明对其他 injectable 的依赖，运行时按依赖图 DFS 解析，按实例缓存，逆序 cleanup，遇到循环抛错
 - `inject()` handler 支持 `Path` / `Query` / `Header` / `Cookie` / `Json` 参数类型标注与 `JsonResponse` 响应类型标注，编译时 transformer 自动提取元数据，运行时注入已解析的请求参数，`openapi()` 自动合并 inject 元数据
 - handler 和 middleware 中抛出的 `HttpError(status, body?, headers?)` 会被自动捕获并转换为对应状态码的响应；`body` 为字符串时响应体为 `{ message }` JSON，为对象时原样输出，省略时无响应体
 - handler 和 middleware 中抛出的其他异常不会被框架吞掉，而是继续抛给上层调用者；如需转为响应，应通过 `routes({ onError })` 或 `createRouter(routes, { onError })` 显式处理
