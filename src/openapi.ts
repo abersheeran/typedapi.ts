@@ -6,6 +6,7 @@ import {
 import {
   middlewareParametersSymbol,
   middlewareResponsesSymbol,
+  middlewareInjectSymbol,
 } from "./middleware.js";
 import type { AnyRoute } from "./types.js";
 
@@ -607,6 +608,33 @@ export function openapi(config: OpenAPIConfig) {
       const literalResp = readLiteralResponses(mwMeta[middlewareResponsesSymbol]);
       if (literalResp) {
         middlewareResponses = { ...middlewareResponses, ...buildResponses(literalResp) };
+      }
+
+      const mwInjectConfig = mwMeta[middlewareInjectSymbol] as
+        | Record<string, unknown>
+        | undefined;
+      if (mwInjectConfig) {
+        for (const injectable of Object.values(mwInjectConfig)) {
+          const injectMeta = injectable as unknown as Record<PropertyKey, unknown>;
+
+          const injectLiteralParams = readLiteralParameters(
+            injectMeta[injectableParametersSymbol],
+          );
+          if (injectLiteralParams) {
+            middlewareParameters.push(...injectLiteralParams.parameters);
+            middlewareRequestBody ??= injectLiteralParams.requestBody;
+          }
+
+          const injectLiteralResp = readLiteralResponses(
+            injectMeta[injectableResponsesSymbol],
+          );
+          if (injectLiteralResp) {
+            middlewareResponses = {
+              ...middlewareResponses,
+              ...buildResponses(injectLiteralResp),
+            };
+          }
+        }
       }
     }
 

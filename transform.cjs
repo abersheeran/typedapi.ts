@@ -196,7 +196,8 @@ module.exports = function (program) {
         const [handler, existingOptions] = node.arguments;
         const hasParameters = hasOptionProperty(existingOptions, "parameters");
         const hasResponses = hasOptionProperty(existingOptions, "responses");
-        if (hasParameters && hasResponses) {
+        const hasInject = hasOptionProperty(existingOptions, "inject");
+        if (hasParameters && hasResponses && hasInject) {
           return node;
         }
 
@@ -224,6 +225,24 @@ module.exports = function (program) {
               factory.createPropertyAssignment(
                 factory.createIdentifier("responses"),
                 toLiteral(metadata),
+              ),
+            );
+          }
+        }
+
+        if (!hasInject) {
+          const injectMetadata = extractMiddlewareInjectMetadata(handler);
+          if (injectMetadata) {
+            const properties = injectMetadata.map(({ paramName, identifier }) =>
+              factory.createPropertyAssignment(
+                factory.createIdentifier(paramName),
+                identifier,
+              ),
+            );
+            injectedProperties.push(
+              factory.createPropertyAssignment(
+                factory.createIdentifier("inject"),
+                factory.createObjectLiteralExpression(properties, true),
               ),
             );
           }
@@ -440,6 +459,65 @@ module.exports = function (program) {
         return firstParam?.type ?? null;
       }
 
+      function getMiddlewareInnerParamTypeNode(handler) {
+        if (!ts.isArrowFunction(handler) && !ts.isFunctionExpression(handler)) {
+          return null;
+        }
+
+        let innerHandler = null;
+
+        if (ts.isArrowFunction(handler)) {
+          const { body } = handler;
+          if (ts.isArrowFunction(body) || ts.isFunctionExpression(body)) {
+            innerHandler = body;
+          } else if (ts.isParenthesizedExpression(body)) {
+            const { expression } = body;
+            if (
+              ts.isArrowFunction(expression) ||
+              ts.isFunctionExpression(expression)
+            ) {
+              innerHandler = expression;
+            }
+          }
+        }
+
+        if (!innerHandler) {
+          const blockBody = ts.isFunctionExpression(handler)
+            ? handler.body
+            : ts.isBlock(handler.body)
+              ? handler.body
+              : null;
+
+          if (blockBody) {
+            for (const statement of blockBody.statements) {
+              if (!ts.isReturnStatement(statement) || !statement.expression) {
+                continue;
+              }
+
+              let returnedExpression = statement.expression;
+              if (ts.isParenthesizedExpression(returnedExpression)) {
+                returnedExpression = returnedExpression.expression;
+              }
+
+              if (
+                ts.isArrowFunction(returnedExpression) ||
+                ts.isFunctionExpression(returnedExpression)
+              ) {
+                innerHandler = returnedExpression;
+              }
+              break;
+            }
+          }
+        }
+
+        if (!innerHandler) {
+          return null;
+        }
+
+        const [firstParam] = innerHandler.parameters;
+        return firstParam?.type ?? null;
+      }
+
       function getHandlerReturnType(handler) {
         if (ts.isArrowFunction(handler) || ts.isFunctionExpression(handler)) {
           const signature = checker.getSignatureFromDeclaration(handler);
@@ -636,6 +714,52 @@ module.exports = function (program) {
 
       function extractInjectMetadata(handler) {
         const paramTypeNode = getHandlerParamTypeNode(handler);
+        if (!paramTypeNode || !ts.isTypeLiteralNode(paramTypeNode)) {
+          return null;
+        }
+
+        const injects = [];
+
+        for (const member of paramTypeNode.members) {
+          if (!ts.isPropertySignature(member) || !member.type) {
+            continue;
+          }
+
+          const paramName = getPropertyNameText(member.name);
+          if (!paramName) {
+            continue;
+          }
+
+          const type = checker.getTypeAtLocation(member.type);
+          if (!hasTypeProperty(type, "__inject")) {
+            continue;
+          }
+
+          if (!ts.isTypeReferenceNode(member.type)) {
+            continue;
+          }
+
+          const [typeArgument] = member.type.typeArguments ?? [];
+          if (!typeArgument || !ts.isTypeQueryNode(typeArgument)) {
+            continue;
+          }
+
+          const { exprName } = typeArgument;
+          if (!ts.isIdentifier(exprName)) {
+            continue;
+          }
+
+          injects.push({
+            paramName,
+            identifier: factory.createIdentifier(exprName.text),
+          });
+        }
+
+        return injects.length > 0 ? injects : null;
+      }
+
+      function extractMiddlewareInjectMetadata(handler) {
+        const paramTypeNode = getMiddlewareInnerParamTypeNode(handler);
         if (!paramTypeNode || !ts.isTypeLiteralNode(paramTypeNode)) {
           return null;
         }

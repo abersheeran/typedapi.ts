@@ -656,6 +656,8 @@ export default createRouter([getSecret]);
 
 With the transformer enabled, the parameter type of the `middleware()` handler and the return type of the inner handler are automatically extracted at compile time just like `api()`. Parameter and response metadata declared in middleware are merged into the OpenAPI document of every endpoint that uses that middleware; if they duplicate route-level parameters, the route-level parameters take precedence; if response status codes overlap, the route-level responses take precedence.
 
+`middleware()` also accepts `{ parameters, responses, inject, validate }` as its second argument. `parameters` and `responses` feed OpenAPI metadata, while `inject` and `validate` are stored on the middleware as metadata for the runtime pipeline.
+
 Multiple middlewares run in array order using the onion model, and each one can insert logic before and after `next()`:
 
 ```typescript

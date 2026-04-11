@@ -7,7 +7,8 @@
 ## 用户接口
 
 - 通过 `api(config, handler, validate?)` 或 `api(config, handler, { validate, responses, parameters })` 声明路由；`validate` 的类型为 `Validate<RequestParams<HandlerParams<T>>>`
-- 通过 `middleware(handler, { responses, parameters }?)` 声明带文档元数据的 typed middleware
+- 通过 `middleware(handler, { responses, parameters, inject, validate }?)` 声明带文档元数据与运行时元数据的 typed middleware；`middleware()` 本身只负责存储这些元数据，不在定义处执行 `inject` / `validate`
+- `middleware()` 支持 `inject` 和 `validate` 选项；中间件的 `validate` 在中间件执行前运行，`inject` 在 `validate` 通过后解析并在中间件作用域退出时自动清理；编译时 transformer 自动从 middleware inner handler 的参数类型中提取 `Inject<typeof X>` 并注入到配置中；`openapi()` 自动收集 middleware inject 的参数与响应元数据，按 middleware < inject < route 优先级合并
 - 通过 `cors(options?)` 声明不携带 OpenAPI 元数据的 router 级 CORS middleware；始终调用 `next()`，并根据是否为 preflight 在响应上追加对应的 CORS 头
 - 通过 `RouterMiddleware` 定义 router 级中间件，签名为 `(request, next) => Response | Promise<Response>`
 - 通过 `routes(config, ...items)` 聚合路由并叠加 prefix / middlewares
@@ -34,7 +35,7 @@
 - 框架导出与 `typia` 返回结构兼容的 `Validate<T>` 类型；`api()` 的 `validate` 推荐在调用点使用 `typia.createValidate<RequestParams<ConcreteType>>()`，并通过 `RequestParams<T>` 剔除 `Inject<>` 字段避免校验运行时注入对象
 - 框架导出 `RequestParams<T>` 工具类型，用于从 handler 参数类型中剔除带 `__inject` brand 的字段
 - 可通过 `{ validate, responses, parameters }` 启用运行时校验并补充文档元数据；编译时 transformer 默认会直接从 handler 参数类型生成 OpenAPI 参数元数据，并从 `JsonResponse` 返回类型生成响应元数据；调用点显式提供 `parameters` / `responses` 时不覆盖
-- 编译时 transformer 同样会从 `middleware()` handler 返回的 inner handler 参数类型提取 wrapper 元数据并注入 `parameters`，并从 inner handler 返回类型中的 `JsonResponse` brand 提取 `responses`；`openapi()` 会按 middleware 声明顺序收集其 `__entries` / `__body` / `__responses`，再与 route 自身元数据合并，且 route 对同名同位置参数、requestBody 与同状态码 responses 拥有更高优先级
+- 编译时 transformer 同样会从 `middleware()` handler 返回的 inner handler 参数类型提取 wrapper 元数据并注入 `parameters`，并从 inner handler 返回类型中的 `JsonResponse` brand 提取 `responses`；调用点也可显式提供 `inject` / `validate` 元数据；`openapi()` 会按 middleware 声明顺序收集其 `__entries` / `__body` / `__responses`，再与 route 自身元数据合并，且 route 对同名同位置参数、requestBody 与同状态码 responses 拥有更高优先级
 - 通过 `HttpError(status, body?, headers?)` 在 handler 或 middleware 中抛出受控的 HTTP 错误响应
 - `createRouter` 在未配置 `onError` 时默认将 `HttpError` 转为对应响应，其他异常直接抛给上层调用者
 - `createRouter` 支持 `onError(error, request)` 作为 router 级错误处理，签名与 `routes()` 的 `onError` 一致
@@ -52,8 +53,9 @@
 - 参数合并优先级为 `path > body > query > cookie > header`
 - 提供可选的运行时参数校验，校验失败返回 `400`
 - 支持 route 级与 route-group 级 middleware，执行顺序为外层到内层再到 handler
+- middleware 支持声明式 `inject` 和 `validate`，执行语义与 route 级一致
 - 支持 router 级 middleware，执行顺序为外层到内层再到路由分发；其包裹范围包含显式 `OPTIONS` 路由与自动生成的 `OPTIONS` 响应
-- 命中 route 后的执行顺序为 `middleware 外层 → validate → inject → handler → middleware 内层`，`validate` 失败直接返回 `400` 且不会触发 `inject`
+- 命中 route 后的执行顺序为 `middleware.validate → middleware.inject → middleware(before next) → ... → route.validate → route.inject → handler → ... → middleware(after next) → middleware.inject.cleanup`，middleware 与 route 各自的 `validate` 失败直接返回 `400` 且不会触发后续的 `inject`
 - 支持可配置的 router 级 CORS middleware；始终透传到下游 handler，再对普通请求与 preflight 响应补写对应 CORS 头
 - 支持通过 `composeHandlers(...handlers)` 组合多个 router 或 handler，按顺序尝试，首个非 `404` 响应胜出
 - handler 返回值自动转换为响应：`Response` 透传，`null` 转为 `204`，`string` 转为文本响应，`ReadableStream` 转为二进制流响应，`AsyncIterable` 转为 SSE，其余值转为 JSON 响应

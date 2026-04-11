@@ -1,5 +1,9 @@
 import { HttpError } from "./error.js";
 import { resolveInjectables } from "./inject.js";
+import {
+  middlewareInjectSymbol,
+  middlewareValidateSymbol,
+} from "./middleware.js";
 import type { HandlerContext } from "./context.js";
 import type { Injectable } from "./inject.js";
 import type {
@@ -384,8 +388,45 @@ function runMiddlewares(
     }
 
     const next = chain;
-    chain = (currentParams) =>
-      Promise.resolve(middleware(() => next(currentParams))(currentParams, ctx));
+    const validate = (middleware as Middleware & {
+      [middlewareValidateSymbol]?: Validate<unknown>;
+    })[middlewareValidateSymbol];
+    const injectConfig = (middleware as Middleware & {
+      [middlewareInjectSymbol]?: Record<string, Injectable<any>>;
+    })[middlewareInjectSymbol];
+
+    if (!validate && !injectConfig) {
+      chain = (currentParams) =>
+        Promise.resolve(middleware(() => next(currentParams))(currentParams, ctx));
+      continue;
+    }
+
+    chain = async (currentParams) => {
+      if (validate) {
+        const result = validate(currentParams);
+        if (!result.success) {
+          return jsonResponse(
+            { message: "Invalid request", errors: result.errors },
+            400,
+          );
+        }
+        currentParams = result.data as Record<string, unknown>;
+      }
+
+      let cleanup: (() => Promise<void>) | undefined;
+
+      if (injectConfig && Object.keys(injectConfig).length > 0) {
+        const resolved = await resolveInjectables(injectConfig, currentParams, ctx);
+        Object.assign(currentParams, resolved.values);
+        cleanup = resolved.cleanup;
+      }
+
+      try {
+        return await middleware(() => next(currentParams))(currentParams, ctx);
+      } finally {
+        if (cleanup) await cleanup();
+      }
+    };
   }
 
   return chain(params);
