@@ -1,19 +1,19 @@
 import { handleError } from "./api.js";
-import type { AnyRoute, RouterMiddleware } from "./types.js";
+import type { Route, RouterMiddleware } from "./types.js";
 
-interface RouteBucket {
-  staticMap: Map<string, AnyRoute>;
-  dynamic: AnyRoute[];
+interface RouteBucket<T = unknown> {
+  staticMap: Map<string, Route<any, any, T>>;
+  dynamic: Array<Route<any, any, T>>;
 }
 
 export function createRouter<T = unknown>(
-  routes: AnyRoute[],
+  routes: Array<Route<any, any, NoInfer<T>>>,
   options?: {
     middlewares?: RouterMiddleware[];
     onError?: (error: unknown, request: Request) => Response | Promise<Response>;
   },
 ): (request: Request, context?: T) => Promise<Response> {
-  const index = new Map<string, RouteBucket>();
+  const index = new Map<string, RouteBucket<T>>();
   const middlewares = options?.middlewares ?? [];
   const onError = options?.onError;
 
@@ -129,12 +129,12 @@ export function composeHandlers<T = unknown>(
   };
 }
 
-async function dispatchBucket(
-  bucket: RouteBucket,
+async function dispatchBucket<T>(
+  bucket: RouteBucket<T>,
   request: Request,
   pathname: string,
   url: URL,
-  context?: unknown,
+  context?: T,
 ): Promise<Response | null> {
   const staticRoute = bucket.staticMap.get(pathname);
   if (staticRoute) {
@@ -155,8 +155,8 @@ async function dispatchBucket(
   return null;
 }
 
-function collectAllowedMethods(
-  index: Map<string, RouteBucket>,
+function collectAllowedMethods<T>(
+  index: Map<string, RouteBucket<T>>,
   pathname: string,
   url: URL,
 ): string[] {

@@ -126,11 +126,14 @@ export type SseResponse<
   };
 };
 
-export type Middleware = (
+export type Middleware<
+  TContext = unknown,
+  TParams = Record<string, unknown>,
+> = (
   next: () => Promise<Response>,
 ) => (
-  params: Record<string, unknown>,
-  ctx: HandlerContext,
+  params: TParams,
+  ctx: HandlerContext<TContext>,
 ) => Response | Promise<Response>;
 
 export type RouterMiddleware = (
@@ -138,11 +141,11 @@ export type RouterMiddleware = (
   next: () => Promise<Response>,
 ) => Response | Promise<Response>;
 
-export interface RouteConfig {
+export interface RouteConfig<TContext = unknown> {
   method: string;
   path: string;
   expose?: boolean;
-  middlewares?: Middleware[];
+  middlewares?: Middleware<TContext, any>[];
   inject?: Record<string, Injectable<any>>;
   tags?: string[];
   summary?: string;
@@ -172,21 +175,21 @@ export type Validate<T> = (
       errors: unknown[];
     };
 
-export type RouteHandler<TParams = unknown, TResult = unknown> = (
+export type RouteHandler<TParams = unknown, TResult = unknown, TContext = unknown> = (
   params: TParams,
-  ctx: HandlerContext,
+  ctx: HandlerContext<TContext>,
 ) => TResult | Promise<TResult>;
 
-export interface Route<TParams = unknown, TResult = unknown> {
-  config: RouteConfig;
-  handler: RouteHandler<TParams, TResult>;
+export interface Route<TParams = unknown, TResult = unknown, TContext = unknown> {
+  config: RouteConfig<TContext>;
+  handler: RouteHandler<TParams, TResult, TContext>;
   match(request: Request, url?: URL): RouteMatch | null;
   matchPath(url: URL): RouteMatch | null;
   handle(
     request: Request,
     match?: RouteMatch,
-    context?: unknown,
+    context?: TContext,
   ): Promise<Response>;
 }
 
-export type AnyRoute = Route<any, any>;
+export type AnyRoute = Route<any, any, any>;

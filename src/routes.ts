@@ -9,23 +9,26 @@ import {
   routeResponsesSymbol,
   routeValidateSymbol,
 } from "./api.js";
-import type { AnyRoute, Middleware, RouteMatch } from "./types.js";
+import type { Middleware, Route, RouteMatch } from "./types.js";
 
-interface RoutesConfig {
+interface RoutesConfig<TContext = unknown> {
   prefix?: string;
-  middlewares?: Middleware[];
+  middlewares?: Middleware<TContext, any>[];
   tags?: string[];
   onError?: (error: unknown, request: Request) => Response | Promise<Response>;
 }
 
-type InternalRoute = AnyRoute & {
+type InternalRoute<TContext = unknown> = Route<any, any, TContext> & {
   [routeOnErrorSymbol]?: (error: unknown, request: Request) => Response | Promise<Response>;
   [routeParametersSymbol]?: unknown;
   [routeValidateSymbol]?: (input: unknown) => unknown;
   [routeResponsesSymbol]?: unknown;
 };
 
-export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
+export function routes<TContext = unknown>(
+  config: RoutesConfig<TContext>,
+  ...items: Array<Route<any, any, TContext>>
+): Array<Route<any, any, TContext>> {
   return items.map((route) => {
     const { tags: routeTags, ...routeConfig } = route.config;
     const method = route.config.method.toUpperCase();
@@ -54,10 +57,10 @@ export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
       const parsed = url ?? new URL(request.url);
       return matchUrlPath(parsed);
     };
-    const existingOnError = (route as InternalRoute)[routeOnErrorSymbol];
+    const existingOnError = (route as InternalRoute<TContext>)[routeOnErrorSymbol];
     const effectiveOnError = existingOnError ?? config.onError;
 
-    const wrapped: AnyRoute = {
+    const wrapped: Route<any, any, TContext> = {
       config: {
         ...routeConfig,
         method,
@@ -103,23 +106,23 @@ export function routes(config: RoutesConfig, ...items: AnyRoute[]): AnyRoute[] {
       },
     };
 
-    const validate = (route as InternalRoute)[routeValidateSymbol];
+    const validate = (route as InternalRoute<TContext>)[routeValidateSymbol];
     if (validate) {
-      (wrapped as InternalRoute)[routeValidateSymbol] = validate;
+      (wrapped as InternalRoute<TContext>)[routeValidateSymbol] = validate;
     }
 
-    const responses = (route as InternalRoute)[routeResponsesSymbol];
+    const responses = (route as InternalRoute<TContext>)[routeResponsesSymbol];
     if (responses) {
-      (wrapped as InternalRoute)[routeResponsesSymbol] = responses;
+      (wrapped as InternalRoute<TContext>)[routeResponsesSymbol] = responses;
     }
 
-    const parameters = (route as InternalRoute)[routeParametersSymbol];
+    const parameters = (route as InternalRoute<TContext>)[routeParametersSymbol];
     if (parameters) {
-      (wrapped as InternalRoute)[routeParametersSymbol] = parameters;
+      (wrapped as InternalRoute<TContext>)[routeParametersSymbol] = parameters;
     }
 
     if (effectiveOnError) {
-      (wrapped as InternalRoute)[routeOnErrorSymbol] = effectiveOnError;
+      (wrapped as InternalRoute<TContext>)[routeOnErrorSymbol] = effectiveOnError;
     }
 
     return wrapped;

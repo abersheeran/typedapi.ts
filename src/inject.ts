@@ -2,9 +2,17 @@ import type { HandlerContext } from "./context.js";
 
 type InjectableGenerator<T> = AsyncGenerator<T, void, unknown>;
 type InjectableParams = Record<string, unknown>;
-type InjectableFn<T> =
-  | ((params: InjectableParams, ctx: HandlerContext) => Promise<T>)
-  | ((params: InjectableParams, ctx: HandlerContext) => InjectableGenerator<T>);
+type InjectablePromiseFn<T, P = InjectableParams, TCtx = unknown> = {
+  // Method form keeps params bivariant for overload compatibility.
+  bivarianceHack(params: P, ctx: HandlerContext<TCtx>): Promise<T>;
+}["bivarianceHack"];
+type InjectableGeneratorFn<T, P = InjectableParams, TCtx = unknown> = {
+  // Method form keeps params bivariant for overload compatibility.
+  bivarianceHack(params: P, ctx: HandlerContext<TCtx>): InjectableGenerator<T>;
+}["bivarianceHack"];
+type InjectableFn<T, TCtx = unknown> =
+  | InjectablePromiseFn<T, InjectableParams, TCtx>
+  | InjectableGeneratorFn<T, InjectableParams, TCtx>;
 
 export const injectableParametersSymbol = Symbol("injectableParameters");
 export const injectableResponsesSymbol = Symbol("injectableResponses");
@@ -32,20 +40,42 @@ export type Inject<I> = I extends Injectable<infer T>
   ? T & { readonly __inject?: true }
   : never;
 
-export function inject<T>(
+export type InjectDeps<I extends Record<string, Injectable<any>>> = {
+  [K in keyof I]: Inject<I[K]>;
+};
+
+export function inject<
+  T,
+  I extends Record<string, Injectable<any>>,
+  P extends InjectableParams,
+  TCtx = unknown,
+>(
+  fn: (params: InjectDeps<I> & P, ctx: HandlerContext<TCtx>) => Promise<T>,
+  options: Omit<InjectableOptions, "inject"> & { inject: I },
+): Injectable<T>;
+export function inject<
+  T,
+  I extends Record<string, Injectable<any>>,
+  P extends InjectableParams,
+  TCtx = unknown,
+>(
+  fn: (params: InjectDeps<I> & P, ctx: HandlerContext<TCtx>) => InjectableGenerator<T>,
+  options: Omit<InjectableOptions, "inject"> & { inject: I },
+): Injectable<T>;
+export function inject<T, P extends InjectableParams, TCtx = unknown>(
+  fn: (params: P, ctx: HandlerContext<TCtx>) => Promise<T>,
+  options?: Omit<InjectableOptions, "inject">,
+): Injectable<T>;
+export function inject<T, P extends InjectableParams, TCtx = unknown>(
+  fn: (params: P, ctx: HandlerContext<TCtx>) => InjectableGenerator<T>,
+  options?: Omit<InjectableOptions, "inject">,
+): Injectable<T>;
+export function inject<T, TCtx = unknown>(
   fn: () => Promise<T>,
   options?: InjectableOptions,
 ): Injectable<T>;
-export function inject<T>(
+export function inject<T, TCtx = unknown>(
   fn: () => InjectableGenerator<T>,
-  options?: InjectableOptions,
-): Injectable<T>;
-export function inject<T>(
-  fn: (params: InjectableParams, ctx: HandlerContext) => Promise<T>,
-  options?: InjectableOptions,
-): Injectable<T>;
-export function inject<T>(
-  fn: (params: InjectableParams, ctx: HandlerContext) => InjectableGenerator<T>,
   options?: InjectableOptions,
 ): Injectable<T>;
 export function inject<T>(
@@ -70,9 +100,7 @@ export function inject<T>(
   return Object.freeze(injectable);
 }
 
-type ResolvedValues<T extends Record<string, Injectable<any>>> = {
-  [K in keyof T]: Inject<T[K]>;
-};
+type ResolvedValues<T extends Record<string, Injectable<any>>> = InjectDeps<T>;
 
 export async function resolveInjectables<T extends Record<string, Injectable<any>>>(
   injectables: T,

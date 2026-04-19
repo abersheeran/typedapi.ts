@@ -17,13 +17,21 @@ import type {
 } from "./types.js";
 import { redirect, sse, stream, text } from "./response.js";
 
-type HandlerParams<THandler> = THandler extends RouteHandler<infer TParams, unknown>
-  ? TParams
+type HandlerParams<THandler> = THandler extends (...args: infer TArgs) => any
+  ? TArgs extends [infer TParams, ...any[]]
+    ? TParams
+    : unknown
   : never;
 
-type HandlerResult<THandler> = THandler extends RouteHandler<unknown, infer TResult>
-  ? TResult
-  : never;
+type HandlerResult<THandler> = Awaited<
+  THandler extends (...args: any[]) => infer TResult ? TResult : never
+>;
+
+type HandlerContextOf<THandler> = THandler extends (...args: infer TArgs) => any
+  ? TArgs extends [any, HandlerContext<infer TContext>, ...any[]]
+    ? TContext
+    : unknown
+  : unknown;
 
 export const routeValidateSymbol = Symbol("routeValidate");
 export const routeResponsesSymbol = Symbol("routeResponses");
@@ -34,7 +42,7 @@ type ExtractedParams =
   | { ok: true; data: Record<string, unknown> }
   | { ok: false; message: string };
 
-type InternalRoute = Route<any, any> & {
+type InternalRoute = Route<any, any, any> & {
   [routeParametersSymbol]?: unknown;
   [routeValidateSymbol]?: Validate<unknown>;
   [routeResponsesSymbol]?: unknown;
@@ -42,7 +50,7 @@ type InternalRoute = Route<any, any> & {
 };
 
 export function api<THandler extends (...args: any[]) => any>(
-  config: RouteConfig,
+  config: RouteConfig<HandlerContextOf<THandler>>,
   handler: THandler,
   optionsOrValidate?:
     | Validate<RequestParams<HandlerParams<THandler>>>
@@ -52,7 +60,11 @@ export function api<THandler extends (...args: any[]) => any>(
         responses?: unknown;
         inject?: Record<string, Injectable<any>>;
       },
-): Route<HandlerParams<THandler>, HandlerResult<THandler>> {
+): Route<
+  HandlerParams<THandler>,
+  HandlerResult<THandler>,
+  HandlerContextOf<THandler>
+> {
   const options =
     typeof optionsOrValidate === "function"
       ? { validate: optionsOrValidate }
@@ -78,9 +90,17 @@ export function api<THandler extends (...args: any[]) => any>(
     return matchUrlPath(parsed);
   };
 
-  const route: Route<HandlerParams<THandler>, HandlerResult<THandler>> = {
+  const route: Route<
+    HandlerParams<THandler>,
+    HandlerResult<THandler>,
+    HandlerContextOf<THandler>
+  > = {
     config: { ...config, method, ...(inject ? { inject } : {}) },
-    handler: handler as RouteHandler<HandlerParams<THandler>, HandlerResult<THandler>>,
+    handler: handler as RouteHandler<
+      HandlerParams<THandler>,
+      HandlerResult<THandler>,
+      HandlerContextOf<THandler>
+    >,
     match(request, url) {
       return matchRequest(request, url);
     },
@@ -332,7 +352,7 @@ function isJsonScalar(input: unknown): input is string | number | boolean | null
 }
 
 export async function executeRoute(
-  route: Route<any, any>,
+  route: Route<any, any, any>,
   params: Record<string, unknown>,
   request: Request,
   context: unknown,
@@ -342,7 +362,7 @@ export async function executeRoute(
   const middlewares = route.config.middlewares ?? [];
   const validate = (route as InternalRoute)[routeValidateSymbol];
   const injectConfig = route.config.inject;
-  const handler = route.handler as RouteHandler<Record<string, unknown>, unknown>;
+  const handler = route.handler as RouteHandler<Record<string, unknown>, unknown, any>;
 
   try {
     const innerHandler = async (currentParams: Record<string, unknown>) => {
@@ -374,7 +394,7 @@ export async function executeRoute(
 }
 
 function runMiddlewares(
-  middlewares: Middleware[],
+  middlewares: Middleware<any, any>[],
   params: Record<string, unknown>,
   ctx: HandlerContext,
   innerHandler: (params: Record<string, unknown>) => Promise<Response>,
@@ -388,10 +408,10 @@ function runMiddlewares(
     }
 
     const next = chain;
-    const validate = (middleware as Middleware & {
+    const validate = (middleware as Middleware<any, any> & {
       [middlewareValidateSymbol]?: Validate<unknown>;
     })[middlewareValidateSymbol];
-    const injectConfig = (middleware as Middleware & {
+    const injectConfig = (middleware as Middleware<any, any> & {
       [middlewareInjectSymbol]?: Record<string, Injectable<any>>;
     })[middlewareInjectSymbol];
 
